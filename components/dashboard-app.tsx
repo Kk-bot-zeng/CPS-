@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3, Boxes, ChevronDown, CircleDollarSign, Download, FileSpreadsheet,
   LayoutDashboard, MapPinned, Menu, PackageSearch, Search, Settings, Sparkles,
@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/browser";
-import { LeaderManager, RealMap, RealOverview, RealProducts, TalentManager } from "@/components/real-pages";
+import { LeaderManager, prefetchCoreData, RealMap, RealOverview, RealProducts, TalentManager } from "@/components/real-pages";
 
 type Page = "总览" | "达人管理" | "团长管理" | "商品分析" | "数据导入" | "地图中心";
 type Order = { orderNo: string; productId: string; qty: number; paidAt: string; status: string; amount: number; talent: string; product: string };
@@ -49,6 +49,7 @@ export default function DashboardApp() {
   const [mode, setMode] = useState<"GMV" | "GSV">("GMV");
   const [orders, setOrders] = useState<Order[]>([]);
   const [uploading, setUploading] = useState(false);
+  useEffect(()=>{prefetchCoreData()},[]);
   async function logout(){await createClient().auth.signOut();window.location.href="/login"}
 
   return <div className="app-shell">
@@ -125,7 +126,7 @@ function ImportPage({orders,setOrders,uploading,setUploading}:{orders:Order[];se
   async function saveToDatabase() {
     setSaving(true); setProgress(0); setSaveMessage(""); let jobId="";
     try {
-      const batchSize=500; const batches=Math.ceil(orders.length/batchSize);
+      const batchSize=1000; const batches=Math.ceil(orders.length/batchSize);
       for(let i=0;i<batches;i++) {
         const response=await fetch("/api/import-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({orders:orders.slice(i*batchSize,(i+1)*batchSize),importJobId:jobId||undefined,fileName,firstBatch:i===0,finalBatch:i===batches-1,totalRows:orders.length})});
         const result=await response.json(); if(!response.ok) throw new Error(result.error||"写入失败");

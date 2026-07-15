@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./scale.css";
 
 export const metadata: Metadata = {
   title: "雷鸟电视CPS系统",

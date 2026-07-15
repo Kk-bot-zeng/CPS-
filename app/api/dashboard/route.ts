@@ -6,6 +6,9 @@ type OrderRow = { payable_amount:number; quantity:number; order_status:string; t
 export async function GET(request: Request) {
   const auth = await requireApiUser(); if (auth.error) return auth.error;
   const url = new URL(request.url); const start=url.searchParams.get("start"); const end=url.searchParams.get("end");
+  const rpc = await auth.admin.rpc("dashboard_summary", { p_start: start || null, p_end: end || null });
+  if (!rpc.error && rpc.data) return NextResponse.json(rpc.data, { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=120" } });
+  // 兼容尚未执行 performance.sql 的项目，保留原始分页聚合降级方案。
   const all:OrderRow[]=[]; const pageSize=1000;
   for(let from=0;;from+=pageSize){
     let query=auth.admin.from("orders").select("payable_amount,quantity,order_status,talent_name_raw,product_name_raw,paid_at").order("paid_at").range(from,from+pageSize-1);

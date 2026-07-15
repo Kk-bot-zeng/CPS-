@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "登录已失效" }, { status: 401 });
   const body = await request.json() as { orders?: ImportOrder[]; importJobId?: string; fileName?: string; firstBatch?: boolean; finalBatch?: boolean; totalRows?: number };
   const orders = body.orders ?? [];
-  if (!orders.length || orders.length > 500) return NextResponse.json({ error: "每批必须包含1至500条订单" }, { status: 400 });
+  if (!orders.length || orders.length > 1000) return NextResponse.json({ error: "每批必须包含1至1000条订单" }, { status: 400 });
 
   let jobId = body.importJobId;
   if (body.firstBatch || !jobId) {
