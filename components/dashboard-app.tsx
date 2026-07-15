@@ -5,9 +5,11 @@ import {
   BarChart3, Boxes, ChevronDown, CircleDollarSign, Download, FileSpreadsheet,
   LayoutDashboard, MapPinned, Menu, PackageSearch, Search, Settings, Sparkles,
   UploadCloud, UserRound, UsersRound, X, Zap, Bell, ArrowUpRight, ArrowDownRight,
-  MapPin, Phone, Radio, CheckCircle2, AlertCircle, Clock3
+  MapPin, Phone, Radio, CheckCircle2, AlertCircle, Clock3, LogOut
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { createClient } from "@/lib/supabase/browser";
+import { LeaderManager, RealMap, RealOverview, RealProducts, TalentManager } from "@/components/real-pages";
 
 type Page = "总览" | "达人管理" | "团长管理" | "商品分析" | "数据导入" | "地图中心";
 type Order = { orderNo: string; productId: string; qty: number; paidAt: string; status: string; amount: number; talent: string; product: string };
@@ -47,13 +49,14 @@ export default function DashboardApp() {
   const [mode, setMode] = useState<"GMV" | "GSV">("GMV");
   const [orders, setOrders] = useState<Order[]>([]);
   const [uploading, setUploading] = useState(false);
+  async function logout(){await createClient().auth.signOut();window.location.href="/login"}
 
   return <div className="app-shell">
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="brand"><div className="brand-mark"><Zap size={20}/></div>{!collapsed && <div><strong>雷鸟电视</strong><span>CPS SYSTEM</span></div>}</div>
       <button className="collapse" onClick={() => setCollapsed(!collapsed)}><Menu size={18}/></button>
       <nav>{nav.map(({label, icon: Icon}) => <button key={label} className={page === label ? "active" : ""} onClick={() => setPage(label)}><Icon size={19}/>{!collapsed && <span>{label}</span>}</button>)}</nav>
-      <div className="side-bottom"><button><Settings size={19}/>{!collapsed && <span>系统设置</span>}</button>{!collapsed && <div className="version">Thunderbird CPS · v0.1</div>}</div>
+      <div className="side-bottom"><button onClick={logout}><LogOut size={19}/>{!collapsed && <span>退出登录</span>}</button>{!collapsed && <div className="version">Thunderbird CPS · v0.3</div>}</div>
     </aside>
     <main className="main-area">
       <header className="topbar">
@@ -61,12 +64,12 @@ export default function DashboardApp() {
         <div className="top-actions"><div className="global-search"><Search size={17}/><input placeholder="搜索达人、团长或商品"/></div><button className="icon-btn"><Bell size={19}/><i/></button><div className="avatar">雷</div><div className="user"><b>运营管理员</b><span>超级管理员</span></div><ChevronDown size={16}/></div>
       </header>
       <section className="content">
-        {page === "总览" && <Overview mode={mode} setMode={setMode}/>} 
-        {page === "达人管理" && <TalentPage/>}
-        {page === "团长管理" && <LeaderPage/>}
-        {page === "商品分析" && <ProductPage/>}
+        {page === "总览" && <RealOverview/>} 
+        {page === "达人管理" && <TalentManager/>}
+        {page === "团长管理" && <LeaderManager/>}
+        {page === "商品分析" && <RealProducts/>}
         {page === "数据导入" && <ImportPage orders={orders} setOrders={setOrders} uploading={uploading} setUploading={setUploading}/>} 
-        {page === "地图中心" && <MapPage/>}
+        {page === "地图中心" && <RealMap/>}
       </section>
     </main>
   </div>;
