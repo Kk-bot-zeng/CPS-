@@ -1,0 +1,104 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e8]:
+        - strong [ref=e9]: 雷鸟电视
+        - generic [ref=e10]: CPS SYSTEM
+      - button [ref=e11] [cursor=pointer]
+      - navigation [ref=e13]:
+        - button "总览" [ref=e14] [cursor=pointer]
+        - button "达人管理" [ref=e21] [cursor=pointer]
+        - button "团长管理" [ref=e26] [cursor=pointer]
+        - button "商品分析" [ref=e32] [cursor=pointer]
+        - button "数据导入" [ref=e40] [cursor=pointer]
+        - button "地图中心" [ref=e45] [cursor=pointer]
+      - generic [ref=e51]:
+        - button "系统设置" [ref=e52] [cursor=pointer]
+        - generic [ref=e57]: Thunderbird CPS · v0.1
+    - main [ref=e58]:
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - paragraph [ref=e61]: THUNDERBIRD TV · CPS OPERATIONS
+          - heading "数据导入" [level=1] [ref=e334]
+        - generic [ref=e63]:
+          - textbox "搜索达人、团长或商品" [ref=e68]
+          - button [ref=e69] [cursor=pointer]
+          - generic [ref=e74]: 雷
+          - generic [ref=e75]:
+            - generic [ref=e76]: 运营管理员
+            - generic [ref=e77]: 超级管理员
+      - generic [ref=e80]:
+        - generic [ref=e336]:
+          - heading "数据导入" [level=2] [ref=e337]
+          - paragraph [ref=e338]: 上传订单文件，系统将自动校验、去重并更新看板
+        - generic [ref=e339]:
+          - heading "文件解析完成" [level=3] [ref=e347]
+          - paragraph [ref=e345]: 支持 Excel / CSV，自动识别 gmv、gsv 工作表，单文件建议不超过 50MB
+          - button "重新选择文件" [active] [ref=e348] [cursor=pointer]
+        - generic [ref=e349]:
+          - generic [ref=e350]:
+            - generic [ref=e351]: 识别订单
+            - generic [ref=e352]: 24,855
+            - generic [ref=e353]: 主订单编号无重复
+          - generic [ref=e354]:
+            - generic [ref=e355]: 订单金额
+            - generic [ref=e356]: ¥17307.1万
+            - generic [ref=e357]: GMV口径
+          - generic [ref=e358]:
+            - generic [ref=e359]: 识别达人
+            - generic [ref=e360]: "159"
+            - generic [ref=e361]: 等待匹配档案
+          - generic [ref=e362]:
+            - generic [ref=e363]: 待补商品
+            - generic [ref=e364]: "5246"
+            - generic [ref=e365]: 可通过商品ID映射
+        - generic [ref=e366]:
+          - generic [ref=e368]:
+            - heading "导入预览" [level=3] [ref=e369]
+            - paragraph [ref=e370]: 展示前5条订单
+          - table [ref=e372]:
+            - rowgroup [ref=e373]:
+              - row [ref=e374]:
+                - columnheader "订单编号" [ref=e375]
+                - columnheader "支付时间" [ref=e376]
+                - columnheader "状态" [ref=e377]
+                - columnheader "达人" [ref=e378]
+                - columnheader "商品" [ref=e379]
+                - columnheader "金额" [ref=e380]
+            - rowgroup [ref=e381]:
+              - row [ref=e382]:
+                - cell "6950528283567265523" [ref=e383]
+                - cell "Wed Feb 04 2026 21:36:19 GMT+0800 (中国标准时间)" [ref=e384]
+                - cell "已关闭" [ref=e385]
+                - cell "跟着茵茵选家电" [ref=e387]
+                - cell "75鹤6 Ultra 25款" [ref=e388]
+                - cell "¥4,078.3" [ref=e389]
+              - row [ref=e390]:
+                - cell "6950528162938427121" [ref=e391]
+                - cell "Wed Feb 04 2026 21:02:38 GMT+0800 (中国标准时间)" [ref=e392]
+                - cell "已完成" [ref=e393]
+                - cell "跟着茵茵选家电" [ref=e395]
+                - cell "75鹤6 Ultra 25款" [ref=e396]
+                - cell "¥4,163.3" [ref=e397]
+              - row [ref=e398]:
+                - cell "6950489270365328792" [ref=e399]
+                - cell "Mon Feb 02 2026 22:16:03 GMT+0800 (中国标准时间)" [ref=e400]
+                - cell "已完成" [ref=e401]
+                - cell "跟着茵茵选家电" [ref=e403]
+                - cell "75鹤6 Ultra 25款" [ref=e404]
+                - cell "¥4,222.8" [ref=e405]
+              - row [ref=e406]:
+                - cell "6924117403034156379" [ref=e407]
+                - cell "Mon Feb 02 2026 22:08:29 GMT+0800 (中国标准时间)" [ref=e408]
+                - cell "已关闭" [ref=e409]
+                - cell "跟着茵茵选家电" [ref=e411]
+                - cell "75鹤6 Ultra 25款" [ref=e412]
+                - cell "¥4,798" [ref=e413]
+              - row [ref=e414]:
+                - cell "6950474037198787992" [ref=e415]
+                - cell "Mon Feb 02 2026 21:43:32 GMT+0800 (中国标准时间)" [ref=e416]
+                - cell "已关闭" [ref=e417]
+                - cell "跟着茵茵选家电" [ref=e419]
+                - cell "75鹤6 Ultra 25款" [ref=e420]
+                - cell "¥4,248.3" [ref=e421]
+  - alert [ref=e333]

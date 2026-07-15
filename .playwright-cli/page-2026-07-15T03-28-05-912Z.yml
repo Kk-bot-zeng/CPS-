@@ -1,0 +1,38 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e8]:
+        - strong [ref=e9]: 雷鸟电视
+        - generic [ref=e10]: CPS SYSTEM
+      - button [ref=e11] [cursor=pointer]
+      - navigation [ref=e13]:
+        - button "总览" [ref=e14] [cursor=pointer]
+        - button "达人管理" [ref=e21] [cursor=pointer]
+        - button "团长管理" [ref=e26] [cursor=pointer]
+        - button "商品分析" [ref=e32] [cursor=pointer]
+        - button "数据导入" [active] [ref=e40] [cursor=pointer]
+        - button "地图中心" [ref=e45] [cursor=pointer]
+      - generic [ref=e51]:
+        - button "系统设置" [ref=e52] [cursor=pointer]
+        - generic [ref=e57]: Thunderbird CPS · v0.1
+    - main [ref=e58]:
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - paragraph [ref=e61]: THUNDERBIRD TV · CPS OPERATIONS
+          - heading "数据导入" [level=1] [ref=e334]
+        - generic [ref=e63]:
+          - textbox "搜索达人、团长或商品" [ref=e68]
+          - button [ref=e69] [cursor=pointer]
+          - generic [ref=e74]: 雷
+          - generic [ref=e75]:
+            - generic [ref=e76]: 运营管理员
+            - generic [ref=e77]: 超级管理员
+      - generic [ref=e80]:
+        - generic [ref=e336]:
+          - heading "数据导入" [level=2] [ref=e337]
+          - paragraph [ref=e338]: 上传订单文件，系统将自动校验、去重并更新看板
+        - generic [ref=e339]:
+          - heading "拖拽订单文件到这里，或点击上传" [level=3] [ref=e344]
+          - paragraph [ref=e345]: 支持 Excel / CSV，自动识别 gmv、gsv 工作表，单文件建议不超过 50MB
+          - button "选择订单文件" [ref=e346] [cursor=pointer]
+  - alert [ref=e333]
