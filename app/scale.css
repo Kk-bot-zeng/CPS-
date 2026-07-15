@@ -61,3 +61,17 @@
 .loading,.empty{min-height:300px;font-size:14px}
 @media(max-width:1200px){.dashboard-grid{grid-template-columns:1fr}.map-layout{grid-template-columns:1fr}.map-list{display:block;max-height:420px}.content{padding:24px}.leader-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.content{padding:18px 13px}.page-title h2{font-size:23px}.panel{padding:16px}.data-table th,.data-table td{font-size:11px;padding:12px 10px}.filter-search{width:100%}.filters{flex-wrap:wrap}.dashboard-grid{gap:12px}.mock-map{height:480px}.map-list{display:block}.product-list>div{grid-template-columns:35px 1fr 92px}.form-modal{width:100%}}
+
+/* 防止总览、图表和宽表格撑破主内容区域 */
+.main-area{min-width:0;overflow-x:hidden}
+.content{width:100%;overflow-x:hidden}
+.dashboard-grid{width:100%;grid-template-columns:minmax(0,2.25fr) minmax(300px,1fr)}
+.dashboard-grid>*{min-width:0;max-width:100%}
+.panel{min-width:0;max-width:100%;overflow:hidden}
+.data-table{width:100%;max-width:100%;overflow-x:auto}
+.data-table table{min-width:720px}
+.real-actions{max-width:100%;flex-wrap:wrap;justify-content:flex-end}
+.real-bars{width:100%;max-width:100%;overflow:hidden}
+@media(max-width:1400px){.dashboard-grid{grid-template-columns:1fr}.real-bars{height:280px}}
+@media(max-width:900px){.page-title{align-items:flex-start;gap:14px;flex-wrap:wrap}.real-actions{justify-content:flex-start}.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}.data-table table{min-width:650px}}
