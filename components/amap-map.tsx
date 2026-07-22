@@ -8,7 +8,9 @@ export type MapResource = {
   type: "达人" | "团长";
   name: string;
   channel: string | null;
+  province: string | null;
   city: string | null;
+  district: string | null;
   address: string | null;
   longitude: number | null;
   latitude: number | null;
@@ -90,17 +92,34 @@ export default function AmapMap({
             });
             continue;
           }
-          const address = [resource.city, resource.address]
+          const address = [
+            resource.province,
+            resource.city,
+            resource.district,
+            resource.address,
+          ]
             .filter(Boolean)
-            .join(" ");
+            .join("");
           if (!address) continue;
           const position = await new Promise<[number, number] | null>(
             (resolve) => {
               geocoder.getLocation(address, (status: string, result: any) => {
-                const location =
-                  status === "complete"
-                    ? result?.geocodes?.[0]?.location
-                    : null;
+                const geocode =
+                  status === "complete" ? result?.geocodes?.[0] : null;
+                const location = geocode?.location;
+                if (location) {
+                  void fetch("/api/map-locations", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: resource.id.replace(/^(talent|leader)-/, ""),
+                      type: resource.type,
+                      longitude: location.lng,
+                      latitude: location.lat,
+                      precision: geocode.level || "geocoded",
+                    }),
+                  });
+                }
                 resolve(location ? [location.lng, location.lat] : null);
               });
             },
@@ -118,7 +137,7 @@ export default function AmapMap({
             onSelect(resource.id);
             const info = new AMap.InfoWindow({
               offset: new AMap.Pixel(0, -26),
-              content: `<div class="amap-info"><b>${escapeHtml(resource.name)}</b><span>${resource.type} · ${escapeHtml(resource.city || resource.address || "位置已记录")}</span></div>`,
+              content: `<div class="amap-info"><b>${escapeHtml(resource.name)}</b><span>${resource.type} · ${escapeHtml([resource.province, resource.city, resource.district, resource.address].filter(Boolean).join(" ") || "位置已记录")}</span></div>`,
             });
             info.open(map, position);
           });

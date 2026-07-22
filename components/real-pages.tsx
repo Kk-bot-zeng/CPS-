@@ -543,7 +543,9 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
       type: "达人",
       name: x.name,
       channel: x.platform,
+      province: x.province,
       city: x.city,
+      district: x.district,
       address: x.address,
       longitude: x.longitude,
       latitude: x.latitude,
@@ -553,7 +555,9 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
       type: "团长",
       name: x.name,
       channel: x.platform,
+      province: x.province,
       city: x.city,
+      district: x.district,
       address: x.address,
       longitude: x.longitude,
       latitude: x.latitude,
@@ -565,7 +569,7 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
       ) &&
       (kind === "全部" || x.type === kind) &&
       (!q ||
-        `${x.name}${x.city || ""}${x.address || ""}`
+        `${x.name}${x.province || ""}${x.city || ""}${x.district || ""}${x.address || ""}`
           .toLowerCase()
           .includes(q.toLowerCase())),
   );
@@ -617,7 +621,9 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
                 <b>{x.name}</b>
                 <span>
                   <MapPin size={12} />
-                  {[x.city, x.address].filter(Boolean).join(" · ")}
+                  {[x.province, x.city, x.district, x.address]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
                 <small>
                   {x.type} · {channelName(x.channel)}
@@ -766,6 +772,11 @@ function TalentModal({
         set={(x) => setV({ ...v, city: x })}
       />
       <FormInput
+        label="区/县"
+        value={v.district}
+        set={(x) => setV({ ...v, district: x })}
+      />
+      <FormInput
         label="详细地址"
         value={v.address}
         set={(x) => setV({ ...v, address: x })}
@@ -834,6 +845,11 @@ function LeaderModal({
         label="城市"
         value={v.city}
         set={(x) => setV({ ...v, city: x })}
+      />
+      <FormInput
+        label="区/县"
+        value={v.district}
+        set={(x) => setV({ ...v, district: x })}
       />
       <FormInput
         label="详细地址"
