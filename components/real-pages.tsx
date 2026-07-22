@@ -527,6 +527,12 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState("");
   useEffect(() => {
+    if (!selected) return;
+    document
+      .querySelector(`[data-map-resource="${selected}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selected]);
+  useEffect(() => {
     Promise.all([
       jsonFetch<Talent[]>(`/api/talents?channel=${channel}`),
       jsonFetch<Leader[]>(`/api/leaders?channel=${channel}`),
@@ -622,6 +628,7 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
             <div
               className={`map-person ${selected === x.id ? "selected" : ""}`}
               key={x.id}
+              data-map-resource={x.id}
               onClick={() => setSelected(x.id)}
             >
               <div className={`talent-avatar a${i % 5}`}>{x.name[0]}</div>

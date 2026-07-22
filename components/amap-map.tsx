@@ -55,6 +55,7 @@ export default function AmapMap({
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markerRef = useRef(new Map<string, any>());
+  const infoRef = useRef<any>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">(
     "loading",
   );
@@ -139,14 +140,18 @@ export default function AmapMap({
             content: markerContent(resource),
             zIndex: resource.type === "团长" ? 120 : 110,
           });
-          marker.on("click", () => {
+          const openDetails = () => {
             onSelect(resource.id);
             const info = new AMap.InfoWindow({
               offset: new AMap.Pixel(0, -26),
               content: `<div class="amap-info"><b>${escapeHtml(resource.name)}</b><span>${resource.type} · ${escapeHtml([resource.province, resource.city, resource.district, resource.address].filter(Boolean).join(" ") || "位置已记录")}</span></div>`,
             });
+            infoRef.current?.close?.();
+            infoRef.current = info;
             info.open(map, position);
-          });
+          };
+          marker.on("click", openDetails);
+          (marker as any).__openDetails = openDetails;
           markerRef.current.set(resource.id, marker);
           return marker;
         });
@@ -186,6 +191,7 @@ export default function AmapMap({
     const marker = markerRef.current.get(selectedId);
     if (!marker) return;
     mapRef.current.setZoomAndCenter(16, marker.getPosition(), false, 350);
+    window.setTimeout(() => marker.__openDetails?.(), 380);
   }, [selectedId]);
 
   return (
