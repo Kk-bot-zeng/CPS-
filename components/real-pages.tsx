@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
+import AmapMap, { type MapResource } from "@/components/amap-map";
 
 type Summary = {
   gmv: number;
@@ -519,74 +520,108 @@ export function RealProducts({ channel }: { channel: ChannelFilter }) {
   );
 }
 
-export function RealMap() {
+export function RealMap({ channel }: { channel: ChannelFilter }) {
   const [talents, setTalents] = useState<Talent[]>([]);
   const [leaders, setLeaders] = useState<Leader[]>([]);
+  const [kind, setKind] = useState<"全部" | "达人" | "团长">("全部");
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState("");
   useEffect(() => {
     Promise.all([
-      jsonFetch<Talent[]>("/api/talents"),
-      jsonFetch<Leader[]>("/api/leaders"),
+      jsonFetch<Talent[]>(`/api/talents?channel=${channel}`),
+      jsonFetch<Leader[]>(`/api/leaders?channel=${channel}`),
     ])
       .then(([t, l]) => {
         setTalents(t);
         setLeaders(l);
       })
       .catch(() => {});
-  }, []);
-  const located = [
+  }, [channel]);
+  const located: MapResource[] = [
     ...talents.map((x) => ({
+      id: `talent-${x.id}`,
       type: "达人",
       name: x.name,
+      channel: x.platform,
       city: x.city,
       address: x.address,
+      longitude: x.longitude,
+      latitude: x.latitude,
     })),
     ...leaders.map((x) => ({
+      id: `leader-${x.id}`,
       type: "团长",
       name: x.name,
+      channel: x.platform,
       city: x.city,
       address: x.address,
+      longitude: x.longitude,
+      latitude: x.latitude,
     })),
-  ].filter((x) => x.city || x.address);
+  ].filter(
+    (x): x is MapResource =>
+      Boolean(
+        x.city || x.address || (x.longitude != null && x.latitude != null),
+      ) &&
+      (kind === "全部" || x.type === kind) &&
+      (!q ||
+        `${x.name}${x.city || ""}${x.address || ""}`
+          .toLowerCase()
+          .includes(q.toLowerCase())),
+  );
   return (
     <>
-      <ManagerTitle title="地图中心" desc="展示达人和团长档案中的地区位置" />
+      <ManagerTitle
+        title={`地图中心 · ${channel === "all" ? "全部渠道" : channelName(channel)}`}
+        desc="真实全国地图、资源聚合与位置检索"
+      />
       <div className="map-layout">
         <div className="map-panel">
-          <div className="mock-map">
-            {located.map((x, i) => (
-              <div
-                key={`${x.type}-${x.name}`}
-                className={`map-cluster c${i % 3}`}
-                style={{
-                  left: `${18 + (hash(x.name) % 68)}%`,
-                  top: `${18 + (hash(x.name + "x") % 65)}%`,
-                }}
-                title={`${x.type} · ${x.name} · ${x.city || x.address}`}
-              >
-                {i + 1}
-              </div>
-            ))}
-            <div className="map-watermark">
-              <MapPin size={18} />
-              等待高德Web Key后启用精确底图
+          <div className="map-toolbar">
+            <div className="segment">
+              {(["全部", "达人", "团长"] as const).map((value) => (
+                <button
+                  key={value}
+                  className={kind === value ? "active" : ""}
+                  onClick={() => setKind(value)}
+                >
+                  {value}
+                </button>
+              ))}
             </div>
+            <span>{located.length} 个可定位资源</span>
           </div>
+          <AmapMap resources={located} onSelect={setSelected} />
         </div>
         <div className="map-list">
           <div className="map-list-head">
             <h3>已定位资源</h3>
             <span>{located.length}个</span>
           </div>
+          <div className="map-search">
+            <Search size={16} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜索姓名、城市或地址"
+            />
+          </div>
           {located.map((x, i) => (
-            <div className="map-person" key={`${x.type}-${x.name}`}>
+            <div
+              className={`map-person ${selected === x.id ? "selected" : ""}`}
+              key={x.id}
+              onClick={() => setSelected(x.id)}
+            >
               <div className={`talent-avatar a${i % 5}`}>{x.name[0]}</div>
               <p>
                 <b>{x.name}</b>
                 <span>
                   <MapPin size={12} />
-                  {x.city || x.address}
+                  {[x.city, x.address].filter(Boolean).join(" · ")}
                 </span>
-                <small>{x.type}</small>
+                <small>
+                  {x.type} · {channelName(x.channel)}
+                </small>
               </p>
             </div>
           ))}

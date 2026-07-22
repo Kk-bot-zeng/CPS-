@@ -281,7 +281,7 @@ export default function DashboardApp() {
               setUploading={setUploading}
             />
           )}
-          {page === "地图中心" && <RealMap />}
+          {page === "地图中心" && <RealMap channel={channel} />}
         </section>
       </main>
     </div>
