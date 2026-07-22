@@ -1,6 +1,7 @@
 -- 雷鸟电视CPS系统：看板性能优化函数
 -- 在 Supabase SQL Editor 中执行一次即可。
-create or replace function public.dashboard_summary(p_start date default null, p_end date default null)
+drop function if exists public.dashboard_summary(date,date);
+create or replace function public.dashboard_summary(p_start date default null, p_end date default null, p_channel text default null)
 returns jsonb
 language sql
 stable
@@ -14,6 +15,7 @@ with filtered as (
   from public.orders
   where (p_start is null or paid_at >= p_start::timestamptz)
     and (p_end is null or paid_at < (p_end + 1)::timestamptz)
+    and (p_channel is null or platform = p_channel)
 ), totals as (
   select coalesce(sum(payable_amount),0) as gmv,
          coalesce(sum(payable_amount) filter(where order_status <> '已关闭'),0) as gsv,
@@ -46,8 +48,9 @@ select jsonb_build_object(
 ) from totals t;
 $$;
 
-grant execute on function public.dashboard_summary(date,date) to authenticated, service_role;
+grant execute on function public.dashboard_summary(date,date,text) to authenticated, service_role;
 
 create index if not exists orders_talent_name_raw_idx on public.orders(talent_name_raw);
 create index if not exists orders_product_name_raw_idx on public.orders(product_name_raw);
 create index if not exists orders_paid_status_idx on public.orders(paid_at, order_status);
+create index if not exists orders_platform_paid_at_idx on public.orders(platform, paid_at);

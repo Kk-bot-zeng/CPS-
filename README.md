@@ -32,3 +32,5 @@ pnpm dev
 ## 当前导入规则
 
 上传 Excel 后优先读取 `gmv` 工作表，否则读取第一个工作表。支持字段：主订单编号、商品ID、商品数量、支付完成时间、订单状态、订单应付金额、达人昵称、选购商品。
+
+导入前必须选择京东、抖音或天猫渠道。订单使用“渠道 + 主订单编号”作为唯一键，同一订单号在不同渠道不会互相覆盖。已有生产库升级时，先在 Supabase SQL Editor 执行 `supabase/channel_dimension.sql`，再执行 `supabase/performance.sql`；历史渠道会暂存为 `unknown`，需要人工确认后修正。

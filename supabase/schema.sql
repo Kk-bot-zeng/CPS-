@@ -6,7 +6,7 @@ create table if not exists public.leaders (
   contact_name text,
   phone text,
   wechat text,
-  platform text,
+  platform text not null check (platform in ('jd', 'douyin', 'tmall')),
   province text,
   city text,
   district text,
@@ -23,7 +23,7 @@ create table if not exists public.leaders (
 create table if not exists public.talents (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
-  platform text,
+  platform text not null check (platform in ('jd', 'douyin', 'tmall')),
   platform_account text,
   phone text,
   wechat text,
@@ -54,7 +54,7 @@ create table if not exists public.products (
 
 create table if not exists public.orders (
   id uuid primary key default uuid_generate_v4(),
-  platform text not null default 'default',
+  platform text not null check (platform in ('jd', 'douyin', 'tmall')),
   order_no text not null,
   external_product_id text,
   quantity integer not null check (quantity > 0),
@@ -74,6 +74,7 @@ create table if not exists public.orders (
 
 create table if not exists public.import_jobs (
   id uuid primary key default uuid_generate_v4(),
+  channel text not null check (channel in ('jd', 'douyin', 'tmall')),
   file_name text not null,
   file_hash text,
   status text not null default 'processing',
@@ -96,6 +97,10 @@ exception when duplicate_object then null;
 end $$;
 
 create index if not exists orders_paid_at_idx on public.orders(paid_at);
+create index if not exists orders_platform_paid_at_idx on public.orders(platform, paid_at);
+create index if not exists talents_platform_idx on public.talents(platform);
+create index if not exists leaders_platform_idx on public.leaders(platform);
+create index if not exists import_jobs_channel_idx on public.import_jobs(channel);
 create index if not exists orders_talent_id_idx on public.orders(talent_id);
 create index if not exists orders_product_id_idx on public.orders(product_id);
 create index if not exists orders_status_idx on public.orders(order_status);
