@@ -127,6 +127,8 @@ alter table public.products enable row level security;
 alter table public.orders enable row level security;
 alter table public.import_jobs enable row level security;
 
+-- 批量删除函数见 supabase/delete_import_jobs.sql。
+
 create policy "authenticated users can read talents" on public.talents for select to authenticated using (true);
 create policy "authenticated users can read leaders" on public.leaders for select to authenticated using (true);
 create policy "authenticated users can read products" on public.products for select to authenticated using (true);

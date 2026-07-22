@@ -30,6 +30,7 @@ import {
   AlertCircle,
   Clock3,
   LogOut,
+  Trash2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/browser";
@@ -54,6 +55,15 @@ type Order = {
   amount: number;
   talent: string;
   product: string;
+};
+type ImportJob = {
+  id: string;
+  channel: string;
+  file_name: string;
+  status: string;
+  total_rows: number;
+  created_at: string;
+  completed_at: string | null;
 };
 
 const nav: { label: Page; icon: React.ElementType }[] = [
@@ -683,6 +693,29 @@ function ImportPage({
   const [progress, setProgress] = useState(0);
   const [saveMessage, setSaveMessage] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("all");
+  const [jobs, setJobs] = useState<ImportJob[]>([]);
+  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState("");
+  async function loadJobs(nextChannel: ChannelFilter = channel) {
+    setJobsLoading(true);
+    try {
+      const response = await fetch(`/api/import-jobs?channel=${nextChannel}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "读取导入历史失败");
+      setJobs(result);
+      setSelectedJobs([]);
+    } catch (error) {
+      setDeleteMessage(
+        error instanceof Error ? error.message : "读取导入历史失败",
+      );
+    } finally {
+      setJobsLoading(false);
+    }
+  }
+  useEffect(() => {
+    void loadJobs();
+  }, [channel]);
   const summary = useMemo(
     () => ({
       rows: orders.length,
@@ -761,10 +794,41 @@ function ImportPage({
       setSaveMessage(
         `已成功写入 ${orders.length.toLocaleString()} 条订单，重复订单已自动更新`,
       );
+      await loadJobs();
     } catch (err) {
       setSaveMessage(err instanceof Error ? err.message : "写入失败");
     } finally {
       setSaving(false);
+    }
+  }
+  async function deleteSelectedJobs() {
+    if (!selectedJobs.length) return;
+    const rows = jobs
+      .filter((job) => selectedJobs.includes(job.id))
+      .reduce((sum, job) => sum + (job.total_rows || 0), 0);
+    if (
+      !confirm(
+        `确认删除选中的 ${selectedJobs.length} 个导入批次及其关联订单吗？预计影响 ${rows.toLocaleString()} 条记录，此操作不可撤销。`,
+      )
+    )
+      return;
+    setJobsLoading(true);
+    setDeleteMessage("");
+    try {
+      const response = await fetch("/api/import-jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedJobs }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "删除失败");
+      setDeleteMessage(
+        `已删除 ${result.deletedJobs} 个批次、${result.deletedOrders} 条关联订单`,
+      );
+      await loadJobs();
+    } catch (error) {
+      setDeleteMessage(error instanceof Error ? error.message : "删除失败");
+      setJobsLoading(false);
     }
   }
   return (
@@ -780,7 +844,8 @@ function ImportPage({
         <select
           value={channel}
           onChange={(e) => {
-            setChannel(e.target.value as ChannelFilter);
+            const next = e.target.value as ChannelFilter;
+            setChannel(next);
             setOrders([]);
             setFileName("");
             setSaveMessage("");
@@ -909,6 +974,79 @@ function ImportPage({
           </div>
         </>
       )}
+      <div className="panel import-history">
+        <div className="panel-head">
+          <div>
+            <h3>导入历史</h3>
+            <p>按批次管理数据，可多选后批量删除</p>
+          </div>
+          <button
+            className="danger-action"
+            onClick={deleteSelectedJobs}
+            disabled={!selectedJobs.length || jobsLoading}
+          >
+            <Trash2 size={14} />
+            删除所选（{selectedJobs.length}）
+          </button>
+        </div>
+        {deleteMessage && <div className="notice">{deleteMessage}</div>}
+        <div className="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={
+                      jobs.length > 0 && selectedJobs.length === jobs.length
+                    }
+                    onChange={(e) =>
+                      setSelectedJobs(
+                        e.target.checked ? jobs.map((j) => j.id) : [],
+                      )
+                    }
+                  />
+                </th>
+                <th>渠道</th>
+                <th>文件名</th>
+                <th>数据行数</th>
+                <th>状态</th>
+                <th>导入时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedJobs.includes(job.id)}
+                      onChange={(e) =>
+                        setSelectedJobs((current) =>
+                          e.target.checked
+                            ? [...current, job.id]
+                            : current.filter((id) => id !== job.id),
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    <span className="tag">{channelName(job.channel)}</span>
+                  </td>
+                  <td>{job.file_name}</td>
+                  <td>{job.total_rows.toLocaleString()}</td>
+                  <td>{job.status === "completed" ? "已完成" : job.status}</td>
+                  <td>{new Date(job.created_at).toLocaleString("zh-CN")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {jobsLoading && <div className="empty">正在读取导入记录…</div>}
+          {!jobsLoading && !jobs.length && (
+            <div className="empty">暂无导入记录</div>
+          )}
+        </div>
+      </div>
     </PageFrame>
   );
 }
