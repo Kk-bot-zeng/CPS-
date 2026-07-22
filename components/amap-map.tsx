@@ -230,7 +230,7 @@ export default function AmapMap({
 
 function markerContent(resource: MapResource) {
   const color = resource.type === "团长" ? "#0cab7c" : "#6557e8";
-  return `<div style="position:relative;display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 4px 5px rgba(30,25,65,.28))"><div style="width:34px;height:34px;border-radius:50% 50% 50% 8px;transform:rotate(-45deg);display:grid;place-items:center;background:${color};color:#fff;border:3px solid #fff;font-size:11px;font-weight:700"><span style="transform:rotate(45deg)">${resource.type === "团长" ? "团" : "达"}</span></div><span style="margin-top:4px;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.96);color:#29253b;font-size:11px;font-weight:700;white-space:nowrap;border:1px solid #e8e5f2">${escapeHtml(resource.name)}</span></div>`;
+  return `<div style="padding:4px 8px;border-radius:6px;background:rgba(255,255,255,.97);color:#29253b;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid ${color};box-shadow:0 3px 9px rgba(30,25,65,.22)">${escapeHtml(resource.name)}</div>`;
 }
 
 function escapeHtml(value: string) {
