@@ -537,41 +537,45 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
       })
       .catch(() => {});
   }, [channel]);
-  const located: MapResource[] = [
-    ...talents.map((x) => ({
-      id: `talent-${x.id}`,
-      type: "达人",
-      name: x.name,
-      channel: x.platform,
-      province: x.province,
-      city: x.city,
-      district: x.district,
-      address: x.address,
-      longitude: x.longitude,
-      latitude: x.latitude,
-    })),
-    ...leaders.map((x) => ({
-      id: `leader-${x.id}`,
-      type: "团长",
-      name: x.name,
-      channel: x.platform,
-      province: x.province,
-      city: x.city,
-      district: x.district,
-      address: x.address,
-      longitude: x.longitude,
-      latitude: x.latitude,
-    })),
-  ].filter(
-    (x): x is MapResource =>
-      Boolean(
-        x.city || x.address || (x.longitude != null && x.latitude != null),
-      ) &&
-      (kind === "全部" || x.type === kind) &&
-      (!q ||
-        `${x.name}${x.province || ""}${x.city || ""}${x.district || ""}${x.address || ""}`
-          .toLowerCase()
-          .includes(q.toLowerCase())),
+  const located: MapResource[] = useMemo(
+    () =>
+      [
+        ...talents.map((x) => ({
+          id: `talent-${x.id}`,
+          type: "达人",
+          name: x.name,
+          channel: x.platform,
+          province: x.province,
+          city: x.city,
+          district: x.district,
+          address: x.address,
+          longitude: x.longitude,
+          latitude: x.latitude,
+        })),
+        ...leaders.map((x) => ({
+          id: `leader-${x.id}`,
+          type: "团长",
+          name: x.name,
+          channel: x.platform,
+          province: x.province,
+          city: x.city,
+          district: x.district,
+          address: x.address,
+          longitude: x.longitude,
+          latitude: x.latitude,
+        })),
+      ].filter(
+        (x): x is MapResource =>
+          Boolean(
+            x.city || x.address || (x.longitude != null && x.latitude != null),
+          ) &&
+          (kind === "全部" || x.type === kind) &&
+          (!q ||
+            `${x.name}${x.province || ""}${x.city || ""}${x.district || ""}${x.address || ""}`
+              .toLowerCase()
+              .includes(q.toLowerCase())),
+      ),
+    [talents, leaders, kind, q],
   );
   return (
     <>
@@ -595,7 +599,11 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
             </div>
             <span>{located.length} 个可定位资源</span>
           </div>
-          <AmapMap resources={located} onSelect={setSelected} />
+          <AmapMap
+            resources={located}
+            onSelect={setSelected}
+            selectedId={selected}
+          />
         </div>
         <div className="map-list">
           <div className="map-list-head">

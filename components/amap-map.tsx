@@ -46,12 +46,15 @@ function loadAmap(key: string, securityCode: string) {
 export default function AmapMap({
   resources,
   onSelect,
+  selectedId,
 }: {
   resources: MapResource[];
   onSelect: (id: string) => void;
+  selectedId?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const markerRef = useRef(new Map<string, any>());
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">(
     "loading",
   );
@@ -129,9 +132,12 @@ export default function AmapMap({
         const markers = points.map(({ resource, position }) => {
           const marker = new AMap.Marker({
             position,
+            anchor: "bottom-center",
+            offset: new AMap.Pixel(0, -3),
             title: resource.name,
             extData: resource,
-            content: `<div class="amap-resource-marker ${resource.type === "团长" ? "leader" : "talent"}">${resource.type === "团长" ? "团" : "达"}</div>`,
+            content: markerContent(resource),
+            zIndex: resource.type === "团长" ? 120 : 110,
           });
           marker.on("click", () => {
             onSelect(resource.id);
@@ -141,13 +147,18 @@ export default function AmapMap({
             });
             info.open(map, position);
           });
+          markerRef.current.set(resource.id, marker);
           return marker;
         });
         if (markers.length) {
-          cluster = new AMap.MarkerCluster(map, markers, {
-            gridSize: 60,
-            maxZoom: 15,
-          });
+          if (markers.length > 50) {
+            cluster = new AMap.MarkerCluster(map, markers, {
+              gridSize: 50,
+              maxZoom: 13,
+            });
+          } else {
+            map.add(markers);
+          }
           map.setFitView(markers, false, [60, 60, 60, 60], 12);
         }
         if (!cancelled) {
@@ -164,10 +175,18 @@ export default function AmapMap({
     return () => {
       cancelled = true;
       cluster?.setMap?.(null);
+      markerRef.current.clear();
       mapRef.current?.destroy?.();
       mapRef.current = null;
     };
   }, [key, securityCode, resources, onSelect]);
+
+  useEffect(() => {
+    if (!selectedId || !mapRef.current) return;
+    const marker = markerRef.current.get(selectedId);
+    if (!marker) return;
+    mapRef.current.setZoomAndCenter(16, marker.getPosition(), false, 350);
+  }, [selectedId]);
 
   return (
     <div className="amap-shell">
@@ -201,6 +220,11 @@ export default function AmapMap({
       )}
     </div>
   );
+}
+
+function markerContent(resource: MapResource) {
+  const color = resource.type === "团长" ? "#0cab7c" : "#6557e8";
+  return `<div style="position:relative;display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 4px 5px rgba(30,25,65,.28))"><div style="width:34px;height:34px;border-radius:50% 50% 50% 8px;transform:rotate(-45deg);display:grid;place-items:center;background:${color};color:#fff;border:3px solid #fff;font-size:11px;font-weight:700"><span style="transform:rotate(45deg)">${resource.type === "团长" ? "团" : "达"}</span></div><span style="margin-top:4px;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.96);color:#29253b;font-size:11px;font-weight:700;white-space:nowrap;border:1px solid #e8e5f2">${escapeHtml(resource.name)}</span></div>`;
 }
 
 function escapeHtml(value: string) {
