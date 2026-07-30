@@ -77,14 +77,6 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   else responseCache.clear();
   return j;
 }
-export function prefetchCoreData() {
-  void Promise.allSettled([
-    jsonFetch("/api/dashboard?start=2026-01-01&end=2026-12-31"),
-    jsonFetch("/api/talents"),
-    jsonFetch("/api/leaders"),
-  ]);
-}
-
 export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);

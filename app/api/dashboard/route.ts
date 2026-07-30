@@ -5,8 +5,15 @@ import { isChannel } from "@/lib/channels";
 type OrderRow = {
   order_no: string; payable_amount: number; quantity: number; order_status: string;
   talent_name_raw: string; model_name: string | null; product_name_raw: string | null;
-  paid_at: string; is_talent: boolean;
+  paid_at: string | Date; is_talent: boolean;
 };
+
+function dateKey(value: string | Date | null | undefined) {
+  if (!value) return "未知日期";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
+}
 
 export async function GET(request: Request) {
   const auth = await requireApiUser();
@@ -20,21 +27,17 @@ export async function GET(request: Request) {
   if (channel !== "all" && !isChannel(channel))
     return NextResponse.json({ error: "无效渠道" }, { status: 400 });
 
-  const all: OrderRow[] = [];
-  for (let from = 0; ; from += 1000) {
-    let query = auth.admin.from("orders")
+  let query = auth.admin.from("orders")
       .select("order_no,payable_amount,quantity,order_status,talent_name_raw,model_name,product_name_raw,paid_at,is_talent")
-      .eq("is_talent", true).order("paid_at").range(from, from + 999);
-    if (start) query = query.gte("paid_at", `${start}T00:00:00`);
-    if (end) query = query.lte("paid_at", `${end}T23:59:59`);
-    if (channel !== "all") query = query.eq("platform", channel);
-    if (talent !== "all") query = query.eq("talent_name_raw", talent);
-    if (model !== "all") query = query.eq("model_name", model);
-    const { data, error } = await query;
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    all.push(...(data as OrderRow[]));
-    if (!data || data.length < 1000) break;
-  }
+      .eq("is_talent", true).order("paid_at");
+  if (start) query = query.gte("paid_at", `${start}T00:00:00`);
+  if (end) query = query.lte("paid_at", `${end}T23:59:59`);
+  if (channel !== "all") query = query.eq("platform", channel);
+  if (talent !== "all") query = query.eq("talent_name_raw", talent);
+  if (model !== "all") query = query.eq("model_name", model);
+  const { data, error } = await query;
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  const all = (data || []) as OrderRow[];
 
   const talentMap = new Map<string, { gmv: number; gsv: number; orders: Set<string>; qty: number }>();
   const modelMap = new Map<string, { gmv: number; qty: number; talents: Set<string>; orders: Set<string> }>();
@@ -47,7 +50,7 @@ export async function GET(request: Request) {
     const qty = Number(o.quantity) || 0;
     const valid = o.order_status !== "已关闭";
     const modelName = o.model_name || "型号未匹配";
-    const day = o.paid_at.slice(0, 10);
+    const day = dateKey(o.paid_at);
     gmv += amount; quantity += qty; orderSet.add(o.order_no);
     if (valid) { gsv += amount; validOrderSet.add(o.order_no); }
     const t = talentMap.get(o.talent_name_raw) || { gmv: 0, gsv: 0, orders: new Set(), qty: 0 };
@@ -73,7 +76,7 @@ export async function GET(request: Request) {
     gmv, gsv, orders: orderSet.size, validOrders: validOrderSet.size, quantity,
     activeTalents: talentMap.size, talents, products, daily,
     talentModels: [...crossMap.values()].sort((a, b) => b.gmv - a.gmv).slice(0, 200),
-    details: all.slice(-500).reverse().map((o) => ({ date: o.paid_at.slice(0, 10), orderNo: o.order_no,
+    details: all.slice(-500).reverse().map((o) => ({ date: dateKey(o.paid_at), orderNo: o.order_no,
       talent: o.talent_name_raw, model: o.model_name || "型号未匹配", qty: o.quantity, amount: Number(o.payable_amount) || 0 })),
   }, { headers: { "Cache-Control": "private, max-age=15" } });
 }

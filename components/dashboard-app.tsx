@@ -35,7 +35,6 @@ import {
 import * as XLSX from "xlsx";
 import {
   LeaderManager,
-  prefetchCoreData,
   RealMap,
   RealOverview,
   RealProducts,
@@ -187,9 +186,6 @@ export default function DashboardApp() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
-  useEffect(() => {
-    prefetchCoreData();
-  }, []);
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
