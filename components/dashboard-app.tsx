@@ -195,13 +195,11 @@ export default function DashboardApp() {
     <div className="app-shell">
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">
-            <Zap size={20} />
-          </div>
+          <div className="brand-mark">FF</div>
           {!collapsed && (
             <div>
-              <strong>雷鸟电视</strong>
-              <span>CPS SYSTEM</span>
+              <strong>FFALCON 雷鸟</strong>
+              <span>CPS 经营管理系统</span>
             </div>
           )}
         </div>
