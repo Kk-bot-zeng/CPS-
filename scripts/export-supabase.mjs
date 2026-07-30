@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
-const env = Object.fromEntries((await fs.readFile(".env.production.local", "utf8")).split(/\r?\n/).filter(x=>x.includes("=")).map(x=>{const i=x.indexOf("=");return [x.slice(0,i),x.slice(i+1).trim().replace(/^['"]|['"]$/g,"")]}));
-const client = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
 const tables = ["leaders","talents","products","import_jobs","orders"];
 const out = {};
 for (const table of tables) {
