@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudflare Tunnel for Thunderbird CPS
+After=network-online.target cps-app.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zlq
+Group=zlq
+ExecStart=/srv/cps-data/cloudflared/bin/cloudflared tunnel --config /srv/cps-data/cloudflared/config/config.yml run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+[Unit]
+Description=Thunderbird CPS System
+After=network.target postgresql@16-cps.service
+Requires=postgresql@16-cps.service
+
+[Service]
+Type=simple
+User=zlq
+Group=zlq
+WorkingDirectory=/srv/cps-data/app
+EnvironmentFile=/srv/cps-data/app/.env.production
+Environment=PATH=/home/zlq/.nvm/versions/node/v24.18.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/home/zlq/.nvm/versions/node/v24.18.0/bin/node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3200
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/cps-data/uploads /srv/cps-data/logs
+StandardOutput=append:/srv/cps-data/logs/app.log
+StandardError=append:/srv/cps-data/logs/app-error.log
+
+[Install]
+WantedBy=multi-user.target

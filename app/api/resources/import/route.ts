@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       .from("leaders")
       .select("name,platform");
     const keys = new Set(
-      (existing || []).map((x) => `${x.platform}:${x.name}`),
+      (existing || []).map((x: { platform: string; name: string }) => `${x.platform}:${x.name}`),
     );
     const payload = leaders
       .filter((r) => !keys.has(`${r.channel}:${r.name!.trim()}`))
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   if (leaderError)
     return NextResponse.json({ error: leaderError.message }, { status: 400 });
   const leaderMap = new Map(
-    (leaderRows || []).map((l) => [`${l.platform}:${l.name}`, l.id]),
+    (leaderRows || []).map((l: { platform: string; name: string; id: string }) => [`${l.platform}:${l.name}`, l.id]),
   );
   if (talents.length) {
     const unresolved = talents.filter(

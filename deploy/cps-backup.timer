@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily Thunderbird CPS database backup
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+RandomizedDelaySec=300
+[Install]
+WantedBy=timers.target

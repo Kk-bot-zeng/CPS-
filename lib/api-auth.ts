@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { currentUser } from "@/lib/local-auth";
+import { localAdmin } from "@/lib/db";
 
 export async function requireApiUser() {
-  const client = await createClient();
-  const admin = createAdminClient();
-  if (!client || !admin) return { error: NextResponse.json({ error: "数据库后台密钥尚未配置" }, { status: 503 }) };
-  const { data: { user } } = await client.auth.getUser();
+  const user = await currentUser();
   if (!user) return { error: NextResponse.json({ error: "请先登录" }, { status: 401 }) };
-  return { user, admin };
+  return { user, admin: localAdmin };
 }

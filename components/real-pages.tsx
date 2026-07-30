@@ -20,9 +20,11 @@ type Summary = {
   validOrders: number;
   quantity: number;
   activeTalents: number;
-  talents: { name: string; gmv: number; gsv: number; orders: number }[];
-  products: { name: string; gmv: number; qty: number; talents: number }[];
-  daily: { date: string; gmv: number; gsv: number }[];
+  talents: { name: string; gmv: number; gsv: number; orders: number; qty: number }[];
+  products: { name: string; gmv: number; qty: number; talents: number; orders: number }[];
+  daily: { date: string; gmv: number; gsv: number; qty: number; orders: number }[];
+  talentModels: { talent: string; model: string; gmv: number; qty: number }[];
+  details: { date: string; orderNo: string; talent: string; model: string; qty: number; amount: number }[];
 };
 type Talent = {
   id: string;
@@ -88,18 +90,20 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [loading, setLoading] = useState(true);
   const [start, setStart] = useState("2026-01-01");
   const [end, setEnd] = useState("2026-12-31");
+  const [talent, setTalent] = useState("all");
+  const [model, setModel] = useState("all");
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setSummary(
         await jsonFetch(
-          `/api/dashboard?start=${start}&end=${end}&channel=${channel}`,
+          `/api/dashboard?start=${start}&end=${end}&channel=${channel}&talent=${encodeURIComponent(talent)}&model=${encodeURIComponent(model)}`,
         ),
       );
     } finally {
       setLoading(false);
     }
-  }, [start, end, channel]);
+  }, [start, end, channel, talent, model]);
   useEffect(() => {
     load();
   }, [load]);
@@ -127,6 +131,14 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             value={end}
             onChange={(e) => setEnd(e.target.value)}
           />
+          <select value={talent} onChange={(e) => setTalent(e.target.value)}>
+            <option value="all">全部达人</option>
+            {(summary?.talents || []).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+          </select>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="all">全部型号</option>
+            {(summary?.products || []).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+          </select>
           <button onClick={load}>
             <RefreshCw size={14} />
             刷新
@@ -154,6 +166,36 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
           value={String(summary.activeTalents)}
           note={`销售数量 ${summary.quantity.toLocaleString()}`}
         />
+        <RealKpi
+          label="销售总台数"
+          value={summary.quantity.toLocaleString()}
+          note={`${summary.products.length} 个型号`}
+        />
+      </div>
+      <div className="analytics-chart-grid">
+        <div className="panel analytics-wide">
+          <RealHead title="每日销售金额与台数趋势" />
+          <div className="combo-chart">
+            {summary.daily.map((d) => {
+              const maxGmv = Math.max(...summary.daily.map((x) => x.gmv), 1);
+              const maxQty = Math.max(...summary.daily.map((x) => x.qty), 1);
+              return <div className="combo-day" key={d.date} title={`${d.date}：${money(d.gmv)}，${d.qty}台`}>
+                <div className="combo-bars"><i style={{height:`${Math.max(3,d.gmv/maxGmv*100)}%`}}/><b style={{height:`${Math.max(3,d.qty/maxQty*100)}%`}}/></div>
+                <span>{d.date.slice(5)}</span>
+              </div>;
+            })}
+          </div>
+          <div className="chart-legend"><span><i className="gmv-dot"/>销售金额</span><span><i className="qty-dot"/>销售台数</span></div>
+        </div>
+        <div className="panel">
+          <RealHead title="型号销量排名" />
+          <div className="rank-bars">
+            {summary.products.slice(0, 10).map((p, i) => <div key={p.name}>
+              <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(summary.products[0]?.qty||1,1)*100)}%`}}/></i></p>
+              <strong>{p.qty}台</strong><small>{money(p.gmv)}</small>
+            </div>)}
+          </div>
+        </div>
       </div>
       <div className="dashboard-grid">
         <div className="panel wide">
@@ -180,6 +222,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                   <th>GMV</th>
                   <th>GSV</th>
                   <th>订单数</th>
+                  <th>销售台数</th>
                   <th>有效率</th>
                 </tr>
               </thead>
@@ -193,6 +236,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                     <td>{money(t.gmv)}</td>
                     <td>{money(t.gsv)}</td>
                     <td>{t.orders}</td>
+                    <td>{t.qty}</td>
                     <td>{t.gmv ? ((t.gsv / t.gmv) * 100).toFixed(1) : 0}%</td>
                   </tr>
                 ))}
@@ -219,6 +263,18 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             })}
           </div>
         </div>
+      </div>
+      <div className="panel analytics-detail">
+        <RealHead title="达人 × 型号销售贡献" />
+        <div className="data-table"><table><thead><tr><th>达人</th><th>型号</th><th>销售台数</th><th>销售金额</th></tr></thead>
+          <tbody>{summary.talentModels.slice(0, 50).map((x) => <tr key={`${x.talent}-${x.model}`}><td><b>{x.talent}</b></td><td>{x.model}</td><td>{x.qty}</td><td>{money(x.gmv)}</td></tr>)}</tbody>
+        </table></div>
+      </div>
+      <div className="panel analytics-detail">
+        <RealHead title="每日销售明细" action={() => exportCsv("抖音销售明细.csv", summary.details)} />
+        <div className="data-table"><table><thead><tr><th>日期</th><th>达人</th><th>型号</th><th>台数</th><th>金额</th><th>订单号</th></tr></thead>
+          <tbody>{summary.details.slice(0, 100).map((x, i) => <tr key={`${x.orderNo}-${i}`}><td>{x.date}</td><td><b>{x.talent}</b></td><td>{x.model}</td><td>{x.qty}</td><td>{money(x.amount)}</td><td>{x.orderNo}</td></tr>)}</tbody>
+        </table></div>
       </div>
     </>
   );

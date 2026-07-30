@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup Thunderbird CPS database
+[Service]
+Type=oneshot
+User=zlq
+ExecStart=/srv/cps-data/scripts/cps-backup.sh

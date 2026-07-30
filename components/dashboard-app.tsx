@@ -33,7 +33,6 @@ import {
   Trash2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { createClient } from "@/lib/supabase/browser";
 import {
   LeaderManager,
   prefetchCoreData,
@@ -47,14 +46,17 @@ import ResourceManager from "@/components/resource-manager";
 
 type Page = "总览" | "达人/团长管理" | "商品分析" | "数据导入" | "地图中心";
 type Order = {
+  sourceKey: string;
   orderNo: string;
   productId: string;
+  merchantCode: string;
   qty: number;
   paidAt: string;
   status: string;
   amount: number;
   talent: string;
   product: string;
+  model: string;
 };
 type ImportJob = {
   id: string;
@@ -189,7 +191,7 @@ export default function DashboardApp() {
     prefetchCoreData();
   }, []);
   async function logout() {
-    await createClient().auth.signOut();
+    await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
 
@@ -686,7 +688,10 @@ function ImportPage({
   setUploading: (x: boolean) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const mappingInput = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
+  const [mappingStatus, setMappingStatus] = useState("正在读取匹配表状态…");
+  const [mappingSaving, setMappingSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [saveMessage, setSaveMessage] = useState("");
@@ -714,6 +719,16 @@ function ImportPage({
   useEffect(() => {
     void loadJobs();
   }, [channel]);
+  useEffect(() => {
+    if (channel === "all") {
+      setMappingStatus("请先选择渠道");
+      return;
+    }
+    fetch(`/api/product-mappings?channel=${channel}`)
+      .then((r) => r.json())
+      .then((x) => setMappingStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传商品匹配表"))
+      .catch(() => setMappingStatus("匹配表状态读取失败"));
+  }, [channel]);
   const summary = useMemo(
     () => ({
       rows: orders.length,
@@ -734,7 +749,7 @@ function ImportPage({
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
-      const name = wb.SheetNames.includes("gmv") ? "gmv" : wb.SheetNames[0];
+      const name = wb.SheetNames.includes("总表") ? "总表" : wb.SheetNames.includes("gmv") ? "gmv" : wb.SheetNames[0];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
         wb.Sheets[name],
         { raw: false, dateNF: "yyyy-mm-dd hh:mm:ss" },
@@ -742,21 +757,52 @@ function ImportPage({
       const num = (v: unknown) => Number(String(v ?? 0).replace(/,/g, ""));
       setOrders(
         rows
-          .map((r) => ({
-            orderNo: String(r["主订单编号"] ?? ""),
-            productId: String(r["商品ID"] ?? ""),
+          .map((r, index) => {
+            const orderNo = String(r["主订单编号"] ?? "").trim();
+            const productId = String(r["商品ID"] ?? "").trim();
+            const merchantCode = String(r["商家编码"] ?? "").trim();
+            const paidAt = String(r["支付完成时间"] ?? "").trim();
+            const talent = String(r["达人昵称"] ?? "").trim();
+            return ({
+            sourceKey: `${orderNo}|${productId}|${merchantCode}|${paidAt}|${index + 2}`,
+            orderNo,
+            productId,
+            merchantCode,
             qty: num(r["商品数量"]),
-            paidAt: String(r["支付完成时间"] ?? ""),
+            paidAt,
             status: String(r["订单状态"] ?? ""),
             amount: num(r["订单应付金额"]),
-            talent: String(r["达人昵称"] ?? ""),
+            talent,
             product: String(r["选购商品"] ?? ""),
-          }))
-          .filter((r) => r.orderNo),
+            model: String(r["型号"] ?? ""),
+          });})
+          .filter((r) => r.orderNo && r.paidAt && r.qty > 0),
       );
     } finally {
       setUploading(false);
     }
+  }
+  async function loadMapping(file: File) {
+    if (channel === "all") return setMappingStatus("请先选择渠道");
+    setMappingSaving(true);
+    setMappingStatus("正在解析并覆盖匹配表…");
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheetName = wb.SheetNames.includes("数据底表") ? "数据底表" : wb.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName], { raw: false });
+      const mappings = rows.map((r) => ({
+        promotionName: String(r["推广名"] ?? "").trim(),
+        modelName: String(r["型号名"] ?? "").trim(),
+        merchantCode: String(r["商品编码"] ?? "").trim(),
+      })).filter((r) => r.promotionName && r.merchantCode);
+      const response = await fetch("/api/product-mappings", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, fileName: file.name, rows: mappings }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "匹配表上传失败");
+      setMappingStatus(`当前：${file.name}（${result.rowCount}条），已覆盖旧匹配表`);
+    } catch (error) {
+      setMappingStatus(error instanceof Error ? error.message : "匹配表上传失败");
+    } finally { setMappingSaving(false); }
   }
   async function saveToDatabase() {
     if (channel === "all") {
@@ -856,6 +902,18 @@ function ImportPage({
             </option>
           ))}
         </select>
+      </div>
+      <div className="mapping-upload-card">
+        <div>
+          <b>商品型号匹配表</b>
+          <span>{mappingStatus}</span>
+          <small>读取“数据底表”的推广名、型号名、商品编码；上传新文件会覆盖当前版本。</small>
+        </div>
+        <input ref={mappingInput} type="file" accept=".xlsx,.xls" hidden
+          onChange={(e) => e.target.files?.[0] && loadMapping(e.target.files[0])} />
+        <button disabled={channel === "all" || mappingSaving} onClick={() => mappingInput.current?.click()}>
+          {mappingSaving ? "上传中…" : "上传/更新匹配表"}
+        </button>
       </div>
       <input
         ref={input}

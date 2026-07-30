@@ -1,0 +1,8 @@
+tunnel: f1d89b01-5aaf-400e-86d3-4e59b5b31100
+credentials-file: /srv/cps-data/cloudflared/credentials/cps.json
+ingress:
+  - hostname: cps.kkzlqnb.top
+    service: http://127.0.0.1:3200
+  - hostname: www.zlqnb.online
+    service: http://127.0.0.1:3200
+  - service: http_status:404

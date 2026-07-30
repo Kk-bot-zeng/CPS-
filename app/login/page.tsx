@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LockKeyhole, Mail, Zap } from "lucide-react";
-import { createClient } from "@/lib/supabase/browser";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,8 +13,9 @@ export default function LoginPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setLoading(true); setError("");
     try {
-      const { error } = await createClient().auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "登录失败");
       router.replace("/"); router.refresh();
     } catch (err) { setError(err instanceof Error ? err.message : "登录失败"); }
     finally { setLoading(false); }
