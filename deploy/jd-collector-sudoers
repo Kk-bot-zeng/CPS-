@@ -1,0 +1,1 @@
+zlq ALL=(root) NOPASSWD: /bin/systemctl start jd-browser.service, /bin/systemctl stop jd-browser.service, /bin/systemctl restart jd-browser.service
