@@ -42,6 +42,7 @@ import {
 } from "@/components/real-pages";
 import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
 import ResourceManager from "@/components/resource-manager";
+import JdSyncCard from "@/components/jd-sync-card";
 
 type Page = "总览" | "达人/团长管理" | "商品分析" | "数据导入" | "地图中心";
 type Order = {
@@ -874,6 +875,7 @@ function ImportPage({
       title="数据导入"
       desc="上传订单文件，系统将自动校验、去重并更新看板"
     >
+      <JdSyncCard />
       <div className="import-channel">
         <div>
           <b>第一步：选择导入渠道</b>

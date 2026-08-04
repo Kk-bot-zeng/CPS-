@@ -1,0 +1,20 @@
+[Unit]
+Description=Isolated JD collector control service
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=zlq
+WorkingDirectory=/srv/cps-data/jd-collector
+EnvironmentFile=/srv/cps-data/jd-collector/config/collector.env
+ExecStart=/usr/bin/python3 /srv/cps-data/jd-collector/jd-collector.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/srv/cps-data/jd-collector
+
+[Install]
+WantedBy=multi-user.target
