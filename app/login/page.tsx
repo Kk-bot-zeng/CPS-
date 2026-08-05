@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole, UserRound, Zap } from "lucide-react";
+import { LockKeyhole, UserRound } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,10 +35,10 @@ export default function LoginPage() {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <div className="login-logo"><Zap size={30} /></div>
-        <p>THUNDERBIRD TV · CPS SYSTEM</p>
-        <h1>让达人合作<br />更清晰、更高效</h1>
-        <span>销售数据、达人关系与区域资源的一体化运营平台</span>
+        <img className="login-brand-logo" src="/brand/ffalcon-horizontal.png" alt="FFALCON 雷鸟" />
+        <p>FFALCON · CPS BUSINESS SYSTEM</p>
+        <h1>全渠道经营数据<br />清晰、高效、可决策</h1>
+        <span>销售数据、达人团长与商品表现的一体化经营管理平台</span>
       </section>
       <section className="login-card">
         <div>

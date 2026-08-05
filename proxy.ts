@@ -19,4 +19,4 @@ export async function proxy(request: NextRequest) {
   if (loggedIn && request.nextUrl.pathname === "/login") return NextResponse.redirect(new URL("/", request.url));
   return NextResponse.next();
 }
-export const config = { matcher: ["/((?!_next/static|_next/image|icon.svg).*)"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|icon.svg|brand/).*)"] };

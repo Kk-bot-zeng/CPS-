@@ -196,13 +196,8 @@ export default function DashboardApp() {
     <div className="app-shell">
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">FF</div>
-          {!collapsed && (
-            <div>
-              <strong>FFALCON 雷鸟</strong>
-              <span>CPS 经营管理系统</span>
-            </div>
-          )}
+          <img className={collapsed ? "brand-symbol" : "brand-logo"} src={collapsed ? "/brand/ffalcon-symbol.png" : "/brand/ffalcon-horizontal.png"} alt="FFALCON 雷鸟" />
+          {!collapsed && <span className="brand-system-name">CPS 经营管理系统</span>}
         </div>
         <button className="collapse" onClick={() => setCollapsed(!collapsed)}>
           <Menu size={18} />
@@ -230,7 +225,7 @@ export default function DashboardApp() {
       <main className="main-area">
         <header className="topbar">
           <div>
-            <p className="eyebrow">THUNDERBIRD TV · CPS OPERATIONS</p>
+            <p className="eyebrow">FFALCON BUSINESS OPERATIONS</p>
             <h1>{page}</h1>
           </div>
           <div className="top-actions">
