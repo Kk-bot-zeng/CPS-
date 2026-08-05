@@ -37,6 +37,7 @@ const blank = (channel: ChannelFilter): Partial<RecordRow> => ({
   platform: channel === "all" ? null : channel,
   cooperation_status: "合作中",
 });
+const PAGE_SIZE = 25;
 export default function ResourceManager({
   channel,
 }: {
@@ -45,7 +46,9 @@ export default function ResourceManager({
   const [talents, setTalents] = useState<RecordRow[]>([]),
     [leaders, setLeaders] = useState<RecordRow[]>([]),
     [q, setQ] = useState(""),
+    [search, setSearch] = useState(""),
     [kind, setKind] = useState<"全部" | Kind>("全部"),
+    [page, setPage] = useState(1),
     [editing, setEditing] = useState<Partial<RecordRow> | null>(null),
     [batch, setBatch] = useState<any[] | null>(null),
     [message, setMessage] = useState("");
@@ -61,17 +64,28 @@ export default function ResourceManager({
   useEffect(() => {
     void load();
   }, [channel]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(q.trim().toLowerCase()), 180);
+    return () => window.clearTimeout(timer);
+  }, [q]);
+  useEffect(() => setPage(1), [channel, kind, search]);
   const rows = useMemo(
     () =>
       [...talents, ...leaders].filter(
         (r) =>
           (kind === "全部" || r.kind === kind) &&
-          (!q ||
+          (!search ||
             `${r.name}${r.phone || ""}${r.city || ""}`
               .toLowerCase()
-              .includes(q.toLowerCase())),
+              .includes(search)),
       ),
-    [talents, leaders, kind, q],
+    [talents, leaders, kind, search],
+  );
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  useEffect(() => setPage((x) => Math.min(x, pageCount)), [pageCount]);
+  const visibleRows = useMemo(
+    () => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [rows, page],
   );
   async function save() {
     if (!editing?.name || !editing.platform) {
@@ -264,7 +278,7 @@ export default function ResourceManager({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {visibleRows.map((r) => (
                 <tr key={`${r.kind}-${r.id}`}>
                   <td>
                     <span className="tag">{r.kind}</span>
@@ -302,6 +316,15 @@ export default function ResourceManager({
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="resource-pagination">
+          <span>
+            共 {rows.length} 条，第 {page}/{pageCount} 页
+          </span>
+          <div>
+            <button disabled={page === 1} onClick={() => setPage((x) => Math.max(1, x - 1))}>上一页</button>
+            <button disabled={page === pageCount} onClick={() => setPage((x) => Math.min(pageCount, x + 1))}>下一页</button>
+          </div>
         </div>
       </div>
       {editing && (
