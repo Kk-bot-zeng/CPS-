@@ -84,6 +84,8 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [talentOptions, setTalentOptions] = useState<{ value: string; label: string }[]>([]);
+  const [modelOptions, setModelOptions] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [start, setStart] = useState("2026-01-01");
   const [end, setEnd] = useState("2026-12-31");
@@ -111,6 +113,14 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    jsonFetch<Summary>(`/api/dashboard?start=${start}&end=${end}&channel=${channel}&talent=all&model=all`)
+      .then((data) => {
+        setTalentOptions(data.talents.map((x) => ({ value: x.name, label: x.name })));
+        setModelOptions(data.products.map((x) => ({ value: x.name, label: x.name })));
+      })
+      .catch(() => {});
+  }, [start, end, channel]);
   if (loading) return <Loading />;
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
@@ -144,8 +154,8 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             value={end}
             onChange={(e) => setEnd(e.target.value)}
           />
-          <BusinessSelect value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...(summary?.talents || []).map((x) => ({ value:x.name, label:x.name }))]} />
-          <BusinessSelect value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...(summary?.products || []).map((x) => ({ value:x.name, label:x.name }))]} />
+          <BusinessSelect value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
+          <BusinessSelect value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
           <button onClick={load}>
             <RefreshCw size={14} />
             刷新
