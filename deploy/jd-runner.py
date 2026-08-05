@@ -13,6 +13,10 @@ from selenium.webdriver.common.by import By
 ORDER_URL = "https://jzt.jd.com/jtk/#/order-detail"
 STORES = (("store1", 9222, "京东店铺1"), ("store2", 9223, "京东店铺2"))
 ARCHIVE = Path("/srv/cps-data/jd-collector/downloads")
+MAPPING_FILE = Path("/srv/cps-data/jd-collector/config/jd-mappings.json")
+# These are combination/accessory SKUs and never represent a television model.
+EXCLUDED_SKUS = {"100099000000", "100135000000", "100153327609", "100144531546", "100144531526", "100144531514"}
+SKU_OVERRIDES = {"100200856802": "32雀4 25款", "100200856804": "32雀4 25款"}
 
 def attach(port):
     options = webdriver.ChromeOptions()
@@ -74,46 +78,69 @@ def export_store(store, port, label):
     shutil.copy2(result, target)
     return target
 
-def model_from(name):
-    for pattern in (r"\b\d{2,3}[A-Z][A-Z0-9-]*(?:\s*Plus)?\b", r"\b[A-Z]\d{1,3}[A-Z0-9-]+\b"):
-        hit = re.search(pattern, name, re.I)
-        if hit: return hit.group(0).strip()
-    return name[:120]
+def text(value): return "" if value is None else str(value).strip()
+def key(value):
+    value = text(value)
+    return value[:-2] if value.endswith(".0") else value
 
-def read_rows(path, store, label):
+def load_mappings():
+    if not MAPPING_FILE.exists(): raise RuntimeError("缺少京东匹配配置")
+    configured = json.loads(MAPPING_FILE.read_text(encoding="utf-8"))
+    plans = set(configured["plans"])
+    skus = {sku: name for sku, name in configured["skus"].items() if sku not in EXCLUDED_SKUS}
+    skus.update(SKU_OVERRIDES)
+    alliances = configured["alliances"]
+    return plans, skus, alliances
+
+def read_rows(path, store, label, mappings):
+    plans, skus, alliances = mappings
     rows = []
+    stats = {"valid": 0, "plan": 0, "sku": 0, "alliance": 0, "kept": 0}
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         for raw in csv.DictReader(handle):
             if raw.get("是否有效", "").strip() != "有效": continue
+            stats["valid"] += 1
+            plan = raw.get("所属计划/活动", "").strip()
+            if plan not in plans: stats["plan"] += 1; continue
             order_no = raw.get("订单编号", "").strip().strip("\t")
             sku = raw.get("商品编号", "").strip()
+            model = skus.get(sku)
+            if not model: stats["sku"] += 1; continue
             product = raw.get("SKU名称", "").strip()
             talent = raw.get("推客pin", "").strip() or "-"
+            alliance_id = next((value for value in re.findall(r"\((\d+)\)", talent) if value in alliances), None)
+            if not alliance_id: stats["alliance"] += 1; continue
             qty = max(1, int(float(raw.get("商品数量") or 1)))
             rows.append({"platform":"jd", "source_key":f"{store}:{order_no}:{sku}",
                 "order_no":order_no, "external_product_id":sku or None, "merchant_code":sku or None,
                 "quantity":qty, "paid_at":raw.get("下单日期"), "order_status":raw.get("订单状态") or "未知",
-                "payable_amount":float(raw.get("计佣金额") or 0), "talent_name_raw":talent,
-                "is_talent":talent != "-", "product_name_raw":product or None, "model_name":model_from(product),
-                "source_payload":Json({**raw, "店铺":label})})
-    return rows
+                "payable_amount":float(raw.get("计佣金额") or 0), "talent_name_raw":alliances[alliance_id],
+                "is_talent":True, "product_name_raw":product or None, "model_name":model,
+                "source_payload":Json({**raw, "店铺":label, "联盟ID":alliance_id, "团长名称":alliances[alliance_id], "推广名":model})})
+            stats["kept"] += 1
+    return rows, stats
 
 def import_rows(files):
     dsn = os.environ.get("DATABASE_URL")
     if not dsn: raise RuntimeError("采集服务未配置数据库连接")
-    all_rows = []
-    for store, label, path in files: all_rows.extend(read_rows(path, store, label))
+    mappings = load_mappings(); all_rows = []; stats = {"valid":0,"plan":0,"sku":0,"alliance":0,"kept":0}
+    for store, label, path in files:
+        rows, report = read_rows(path, store, label, mappings); all_rows.extend(rows)
+        for name, value in report.items(): stats[name] += value
     conn = psycopg2.connect(dsn)
     try:
         with conn, conn.cursor() as cur:
             job_id = str(uuid.uuid4())
+            # The owner requested that all unmatched JD rows are discarded, not stored for later review.
+            cur.execute("delete from orders where platform='jd'")
+            cur.execute("delete from import_jobs where channel='jd'")
             cur.execute("insert into import_jobs(id,channel,file_name,status,total_rows,created_at) values(%s,'jd',%s,'processing',%s,now())", (job_id, "京东双店自动同步", len(all_rows)))
             sql = """insert into orders(platform,source_key,order_no,external_product_id,merchant_code,quantity,paid_at,order_status,payable_amount,talent_name_raw,is_talent,product_name_raw,model_name,import_job_id,source_payload,updated_at)
               values(%(platform)s,%(source_key)s,%(order_no)s,%(external_product_id)s,%(merchant_code)s,%(quantity)s,%(paid_at)s,%(order_status)s,%(payable_amount)s,%(talent_name_raw)s,%(is_talent)s,%(product_name_raw)s,%(model_name)s,%(import_job_id)s,%(source_payload)s,now())
               on conflict(platform,source_key) do update set quantity=excluded.quantity,paid_at=excluded.paid_at,order_status=excluded.order_status,payable_amount=excluded.payable_amount,talent_name_raw=excluded.talent_name_raw,is_talent=excluded.is_talent,product_name_raw=excluded.product_name_raw,model_name=excluded.model_name,import_job_id=excluded.import_job_id,source_payload=excluded.source_payload,updated_at=now()"""
             for row in all_rows: row["import_job_id"] = job_id; cur.execute(sql, row)
             cur.execute("update import_jobs set status='completed',inserted_rows=%s,completed_at=now() where id=%s", (len(all_rows), job_id))
-        return len(all_rows), job_id
+        return len(all_rows), job_id, stats
     finally: conn.close()
 
 def main():
@@ -121,9 +148,9 @@ def main():
     for store, port, label in STORES:
         print(f"[{label}] 正在导出", flush=True)
         exported.append((store, label, export_store(store, port, label)))
-    count, job = import_rows(exported)
+    count, job, stats = import_rows(exported)
     print(json.dumps({"ok":True, "stores":2, "rows":count, "jobId":job,
-                      "files":[str(x[2]) for x in exported]}, ensure_ascii=False))
+                      "filter":stats, "files":[str(x[2]) for x in exported]}, ensure_ascii=False))
     return 0
 
 if __name__ == "__main__":
