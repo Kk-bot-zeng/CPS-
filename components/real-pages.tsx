@@ -31,6 +31,7 @@ type Talent = {
   name: string;
   platform: string | null;
   platform_account: string | null;
+  match_id: string | null;
   phone: string | null;
   wechat: string | null;
   leader_id: string | null;
@@ -52,6 +53,7 @@ type Leader = {
   phone: string | null;
   wechat: string | null;
   platform: string | null;
+  match_id: string | null;
   province: string | null;
   city: string | null;
   district: string | null;
@@ -811,6 +813,7 @@ function TalentModal({
         value={v.name}
         set={(x) => setV({ ...v, name: x })}
       />
+      <FormInput label="京东匹配ID（联盟ID）" value={v.match_id} set={(x) => setV({ ...v, match_id: x })} />
       <FormSelect
         label="所属渠道*"
         value={v.platform}

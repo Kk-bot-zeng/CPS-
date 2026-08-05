@@ -44,6 +44,7 @@ function clean(b: Record<string, unknown>) {
     phone: b.phone || null,
     wechat: b.wechat || null,
     platform: b.platform || null,
+    match_id: b.match_id || null,
     province: b.province || null,
     city: b.city || null,
     district: b.district || null,

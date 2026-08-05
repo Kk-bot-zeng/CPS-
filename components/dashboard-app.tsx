@@ -684,9 +684,11 @@ function ImportPage({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const mappingInput = useRef<HTMLInputElement>(null);
+  const planInput = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
   const [mappingStatus, setMappingStatus] = useState("正在读取匹配表状态…");
   const [mappingSaving, setMappingSaving] = useState(false);
+  const [planStatus, setPlanStatus] = useState("请选择京东渠道后上传计划白名单");
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [saveMessage, setSaveMessage] = useState("");
@@ -714,6 +716,15 @@ function ImportPage({
   useEffect(() => {
     void loadJobs();
   }, [channel]);
+  useEffect(() => {
+    if (channel !== "jd") { setPlanStatus(channel === "all" ? "请选择京东渠道" : "计划白名单仅用于京东"); return; }
+    fetch("/api/plan-whitelist?channel=jd").then(r=>r.json()).then(x=>setPlanStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传京东计划白名单")).catch(()=>setPlanStatus("计划白名单读取失败"));
+  }, [channel]);
+  function downloadTemplate(kind: "plan" | "sku") {
+    const rows = kind === "plan" ? [{ "计划名称": "示例：雷鸟团长计划" }] : [{ "SKU": "100000000000", "推广名": "示例型号", "型号": "可选", "计入电视销量": "是" }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), kind === "plan" ? "计划白名单" : "SKU商品映射"); XLSX.writeFile(wb, kind === "plan" ? "京东计划白名单模板.xlsx" : "SKU商品映射模板.xlsx");
+  }
+  async function loadPlans(file: File) { try { const wb=XLSX.read(await file.arrayBuffer(),{type:"array"}); const rows=XLSX.utils.sheet_to_json<Record<string,unknown>>(wb.Sheets[wb.SheetNames[0]],{raw:false}); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
   useEffect(() => {
     if (channel === "all") {
       setMappingStatus("请先选择渠道");
@@ -910,7 +921,9 @@ function ImportPage({
         <button disabled={channel === "all" || mappingSaving} onClick={() => mappingInput.current?.click()}>
           {mappingSaving ? "上传中…" : "上传/更新匹配表"}
         </button>
+        {channel !== "all" && <button onClick={() => downloadTemplate("sku")}>下载SKU模板</button>}
       </div>
+      {channel === "jd" && <div className="mapping-upload-card"><div><b>京东计划白名单</b><span>{planStatus}</span><small>仅名单内计划会进入京东同步结果；上传新表覆盖旧表。</small></div><input ref={planInput} type="file" accept=".xlsx,.xls" hidden onChange={(e)=>e.target.files?.[0]&&loadPlans(e.target.files[0])}/><button onClick={()=>downloadTemplate("plan")}>下载模板</button><button onClick={()=>planInput.current?.click()}>上传/更新白名单</button></div>}
       <input
         ref={input}
         type="file"

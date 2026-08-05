@@ -84,12 +84,22 @@ def key(value):
     return value[:-2] if value.endswith(".0") else value
 
 def load_mappings():
-    if not MAPPING_FILE.exists(): raise RuntimeError("缺少京东匹配配置")
-    configured = json.loads(MAPPING_FILE.read_text(encoding="utf-8"))
-    plans = set(configured["plans"])
-    skus = {sku: name for sku, name in configured["skus"].items() if sku not in EXCLUDED_SKUS}
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn: raise RuntimeError("采集服务未配置数据库连接")
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("select i.plan_name from plan_whitelist_items i join plan_whitelist_uploads u on u.id=i.upload_id where u.channel='jd' and u.active=true and i.enabled=true")
+            plans = {row[0] for row in cur.fetchall()}
+            cur.execute("select m.merchant_code,m.promotion_name from product_mappings m join product_mapping_uploads u on u.id=m.upload_id where u.channel='jd' and u.active=true and m.count_in_sales=true")
+            skus = {str(code): name for code,name in cur.fetchall() if str(code) not in EXCLUDED_SKUS}
+            cur.execute("select match_id,name from leaders where platform='jd' and match_id is not null union select match_id,name from talents where platform='jd' and match_id is not null")
+            alliances = {str(match_id): name for match_id,name in cur.fetchall()}
+    finally: conn.close()
+    if not plans: raise RuntimeError("请先在数据导入 > 京东上传计划白名单")
+    if not skus: raise RuntimeError("请先在数据导入 > 京东上传SKU商品映射")
+    if not alliances: raise RuntimeError("请先在达人/团长管理中维护京东匹配ID")
     skus.update(SKU_OVERRIDES)
-    alliances = configured["alliances"]
     return plans, skus, alliances
 
 def read_rows(path, store, label, mappings):

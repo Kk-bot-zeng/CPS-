@@ -6,6 +6,7 @@ type MappingRow = {
   merchantCode: string;
   promotionName: string;
   modelName?: string;
+  countInSales?: boolean;
 };
 
 export async function GET(request: Request) {
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       merchantCode: String(row.merchantCode || "").trim(),
       promotionName: String(row.promotionName || "").trim(),
       modelName: String(row.modelName || "").trim(),
+      countInSales: row.countInSales !== false,
     }))
     .filter((row) => row.merchantCode && row.promotionName);
   if (!rows.length || rows.length > 20000)

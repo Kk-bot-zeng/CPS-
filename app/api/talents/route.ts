@@ -55,6 +55,7 @@ function clean(b: Record<string, unknown>) {
     name: b.name,
     platform: b.platform || null,
     platform_account: b.platform_account || null,
+    match_id: b.match_id || null,
     phone: b.phone || null,
     wechat: b.wechat || null,
     leader_id: b.leader_id || null,
