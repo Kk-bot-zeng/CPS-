@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Export both persisted JD sessions and upsert their valid orders into CPS."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import csv, json, os, re, shutil, sys, time, uuid
 
@@ -38,7 +38,7 @@ def export_store(store, port, label):
     driver = attach(port)
     if "#/order-detail" not in driver.current_url:
         driver.get(ORDER_URL); time.sleep(6)
-    if any(x in driver.current_url.lower() for x in ("login", "passport", "captcha")):
+    if any(x in driver.current_url.lower() for x in ("login", "passport", "captcha", "/gw/index")):
         raise RuntimeError(f"{label} 登录已失效，请重新验证")
 
     date_input = next(e for e in driver.find_elements(By.CSS_SELECTOR, "input.jad-input")
@@ -106,14 +106,17 @@ def read_rows(path, store, label, mappings):
     plans, skus, alliances = mappings
     rows = []
     stats = {"valid": 0, "plan": 0, "sku": 0, "alliance": 0, "kept": 0}
+    snapshot_keys = set()
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         for raw in csv.DictReader(handle):
+            order_no = raw.get("订单编号", "").strip().strip("\t")
+            sku = raw.get("商品编号", "").strip()
+            if order_no and sku:
+                snapshot_keys.add(f"{store}:{order_no}:{sku}")
             if raw.get("是否有效", "").strip() != "有效": continue
             stats["valid"] += 1
             plan = raw.get("所属计划/活动", "").strip()
             if plan not in plans: stats["plan"] += 1; continue
-            order_no = raw.get("订单编号", "").strip().strip("\t")
-            sku = raw.get("商品编号", "").strip()
             model = skus.get(sku)
             if not model: stats["sku"] += 1; continue
             product = raw.get("SKU名称", "").strip()
@@ -128,14 +131,15 @@ def read_rows(path, store, label, mappings):
                 "is_talent":True, "product_name_raw":product or None, "model_name":model,
                 "source_payload":Json({**raw, "店铺":label, "联盟ID":alliance_id, "团长名称":alliances[alliance_id], "推广名":model})})
             stats["kept"] += 1
-    return rows, stats
+    return rows, stats, snapshot_keys
 
 def import_rows(files):
     dsn = os.environ.get("DATABASE_URL")
     if not dsn: raise RuntimeError("采集服务未配置数据库连接")
-    mappings = load_mappings(); all_rows = []; stats = {"valid":0,"plan":0,"sku":0,"alliance":0,"kept":0}
+    mappings = load_mappings(); all_rows = []; snapshots = {}; stats = {"valid":0,"plan":0,"sku":0,"alliance":0,"kept":0,"refunded":0}
     for store, label, path in files:
-        rows, report = read_rows(path, store, label, mappings); all_rows.extend(rows)
+        rows, report, snapshot_keys = read_rows(path, store, label, mappings); all_rows.extend(rows)
+        snapshots[store] = snapshot_keys
         for name, value in report.items(): stats[name] += value
     conn = psycopg2.connect(dsn)
     try:
@@ -148,6 +152,18 @@ def import_rows(files):
               values(%(platform)s,%(source_key)s,%(order_no)s,%(external_product_id)s,%(merchant_code)s,%(quantity)s,%(paid_at)s,%(order_status)s,%(payable_amount)s,%(talent_name_raw)s,%(is_talent)s,%(product_name_raw)s,%(model_name)s,%(import_job_id)s,%(source_payload)s,now())
               on conflict(platform,source_key) do update set quantity=excluded.quantity,paid_at=excluded.paid_at,order_status=excluded.order_status,payable_amount=excluded.payable_amount,talent_name_raw=excluded.talent_name_raw,is_talent=excluded.is_talent,product_name_raw=excluded.product_name_raw,model_name=excluded.model_name,import_job_id=excluded.import_job_id,source_payload=excluded.source_payload,updated_at=now()"""
             for row in all_rows: row["import_job_id"] = job_id; cur.execute(sql, row)
+            # The JD export is an authoritative 30-day snapshot of effective orders. An order
+            # that was imported earlier but later refunded disappears from this snapshot, so
+            # remove its stale database row during every sync ("排退").
+            cutoff = (datetime.now() - timedelta(days=31)).date()
+            for store, snapshot_keys in snapshots.items():
+                if not snapshot_keys:
+                    raise RuntimeError(f"{store} 有效订单快照为空，已停止排退以保护历史数据")
+                cur.execute("""delete from orders
+                    where platform='jd' and paid_at >= %s and source_key like %s
+                      and not (source_key = any(%s))""",
+                    (cutoff, f"{store}:%", list(snapshot_keys)))
+                stats["refunded"] += cur.rowcount
             cur.execute("update import_jobs set status='completed',inserted_rows=%s,completed_at=now() where id=%s", (len(all_rows), job_id))
         return len(all_rows), job_id, stats
     finally: conn.close()

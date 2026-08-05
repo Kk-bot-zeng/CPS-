@@ -24,7 +24,8 @@ def run_export():
             state["lastRun"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             if result.returncode == 0:
                 payload = json.loads(result.stdout.strip().splitlines()[-1])
-                state.update(status="completed",ready=True,message=f"同步完成，本次处理 {payload['rows']} 条有效订单",rows=payload["rows"])
+                refunded = payload.get("filter", {}).get("refunded", 0)
+                state.update(status="completed",ready=True,message=f"同步完成，本次处理 {payload['rows']} 条有效订单，排除退款 {refunded} 条",rows=payload["rows"],refunded=refunded)
             else: state.update(status="needs_attention",ready=browsers_ready(),message=(result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "京东同步失败"))
             open(f"{ROOT}/logs/latest.log","w",encoding="utf-8").write(result.stdout+"\n"+result.stderr)
         except Exception as error: state.update(status="needs_attention",message=str(error))
