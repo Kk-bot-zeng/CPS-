@@ -96,6 +96,9 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
       setLoading(false);
     }
   }, [start, end, channel, talent, model]);
+  const downloadFiltered = () => {
+    window.location.assign(`/api/dashboard-export?${new URLSearchParams({ start, end, channel, talent, model }).toString()}`);
+  };
   useEffect(() => {
     load();
   }, [load]);
@@ -136,6 +139,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             <RefreshCw size={14} />
             刷新
           </button>
+          <button className="export-data" onClick={downloadFiltered}><Download size={14} /> 导出数据</button>
         </div>
       </div>
       <section className="command-brief">
