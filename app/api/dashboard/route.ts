@@ -60,7 +60,11 @@ export async function GET(request: Request) {
     const p = modelMap.get(modelName) || { gmv: 0, qty: 0, talents: new Set(), orders: new Set() };
     p.gmv += amount; p.qty += qty; p.talents.add(o.talent_name_raw); p.orders.add(o.order_no);
     modelMap.set(modelName, p);
-    const seriesName = modelName.replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "").trim() || modelName;
+    const seriesName = (modelName
+      .replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "")
+      .replace(/\s+/g, "")
+      .replace(/(Plus|Ultra|Pro)/i, " $1")
+      .trim() || modelName);
     const s = seriesMap.get(seriesName) || { gmv: 0, qty: 0, talents: new Set(), orders: new Set() };
     s.gmv += amount; s.qty += qty; s.talents.add(o.talent_name_raw); s.orders.add(o.order_no);
     seriesMap.set(seriesName, s);
