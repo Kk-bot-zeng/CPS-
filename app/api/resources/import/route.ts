@@ -7,6 +7,7 @@ type Row = {
   name?: string;
   channel?: string;
   account?: string;
+  matchId?: string;
   leader?: string;
   contact?: string;
   phone?: string;
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
         phone: r.phone || null,
         wechat: r.wechat || null,
         platform: r.channel,
+        match_id: r.matchId || null,
         province: r.province || null,
         city: r.city || null,
         district: r.district || null,
@@ -98,6 +100,7 @@ export async function POST(request: Request) {
       name: r.name!.trim(),
       platform: r.channel,
       platform_account: r.account || null,
+      match_id: r.matchId || null,
       leader_id: r.leader ? leaderMap.get(`${r.channel}:${r.leader}`) : null,
       phone: r.phone || null,
       wechat: r.wechat || null,

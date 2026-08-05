@@ -270,6 +270,7 @@ export default function DashboardApp() {
           {page === "商品分析" && <RealProducts channel={channel} />}
           {page === "数据导入" && (
             <ImportPage
+              channel={channel}
               orders={orders}
               setOrders={setOrders}
               uploading={uploading}
@@ -672,11 +673,13 @@ function ProductPage() {
 }
 
 function ImportPage({
+  channel,
   orders,
   setOrders,
   uploading,
   setUploading,
 }: {
+  channel: ChannelFilter;
   orders: Order[];
   setOrders: (x: Order[]) => void;
   uploading: boolean;
@@ -692,7 +695,6 @@ function ImportPage({
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [saveMessage, setSaveMessage] = useState("");
-  const [channel, setChannel] = useState<ChannelFilter>("all");
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
@@ -886,44 +888,29 @@ function ImportPage({
       title="数据导入"
       desc="上传订单文件，系统将自动校验、去重并更新看板"
     >
-      <JdSyncCard />
-      <div className="import-channel">
-        <div>
-          <b>第一步：选择导入渠道</b>
-          <span>渠道会写入每条订单，提交后不能跨渠道覆盖</span>
+      {channel === "jd" && <JdSyncCard />}
+      {channel === "all" && (
+        <div className="import-channel-empty">
+          请先从页面右上角选择京东、抖音或天猫渠道，再管理对应渠道的数据与匹配规则。
         </div>
-        <select
-          value={channel}
-          onChange={(e) => {
-            const next = e.target.value as ChannelFilter;
-            setChannel(next);
-            setOrders([]);
-            setFileName("");
-            setSaveMessage("");
-          }}
-        >
-          <option value="all">请选择渠道</option>
-          {CHANNELS.map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      )}
+      {channel !== "all" && <>
       <div className="mapping-upload-card">
         <div>
-          <b>商品型号匹配表</b>
+          <b className="channel-rule-title">{channel === "jd" ? "京东 SKU 商品映射" : channel === "douyin" ? "抖音商品型号匹配表" : channel === "tmall" ? "天猫商品型号匹配表" : "请先在顶部选择渠道"}</b>
           <span>{mappingStatus}</span>
           <small>读取“数据底表”的推广名、型号名、商品编码；上传新文件会覆盖当前版本。</small>
         </div>
         <input ref={mappingInput} type="file" accept=".xlsx,.xls" hidden
           onChange={(e) => e.target.files?.[0] && loadMapping(e.target.files[0])} />
-        <button disabled={channel === "all" || mappingSaving} onClick={() => mappingInput.current?.click()}>
-          {mappingSaving ? "上传中…" : "上传/更新匹配表"}
-        </button>
-        {channel !== "all" && <button onClick={() => downloadTemplate("sku")}>下载SKU模板</button>}
+        <div className="mapping-actions">
+          <button className="secondary-rule" onClick={() => downloadTemplate("sku")}>下载模板</button>
+          <button disabled={mappingSaving} onClick={() => mappingInput.current?.click()}>
+            {mappingSaving ? "上传中…" : "上传/更新"}
+          </button>
+        </div>
       </div>
-      {channel === "jd" && <div className="mapping-upload-card"><div><b>京东计划白名单</b><span>{planStatus}</span><small>仅名单内计划会进入京东同步结果；上传新表覆盖旧表。</small></div><input ref={planInput} type="file" accept=".xlsx,.xls" hidden onChange={(e)=>e.target.files?.[0]&&loadPlans(e.target.files[0])}/><button onClick={()=>downloadTemplate("plan")}>下载模板</button><button onClick={()=>planInput.current?.click()}>上传/更新白名单</button></div>}
+      {channel === "jd" && <div className="mapping-upload-card"><div><b>京东计划白名单</b><span>{planStatus}</span><small>仅名单内计划会进入京东同步结果；上传新表覆盖旧表。</small></div><input ref={planInput} type="file" accept=".xlsx,.xls" hidden onChange={(e)=>e.target.files?.[0]&&loadPlans(e.target.files[0])}/><div className="mapping-actions"><button className="secondary-rule" onClick={()=>downloadTemplate("plan")}>下载模板</button><button onClick={()=>planInput.current?.click()}>上传/更新</button></div></div>}
       <input
         ref={input}
         type="file"
@@ -932,26 +919,25 @@ function ImportPage({
         onChange={(e) => e.target.files?.[0] && load(e.target.files[0])}
       />
       <div
-        className={`upload-zone ${orders.length ? "has-data" : ""} ${channel === "all" ? "disabled" : ""}`}
-        onClick={() => channel !== "all" && input.current?.click()}
+        className={`upload-zone ${orders.length ? "has-data" : ""}`}
+        onClick={() => input.current?.click()}
       >
         <div className="upload-icon">
           <UploadCloud size={30} />
         </div>
         <h3>
-          {channel === "all"
-            ? "请先选择渠道"
-            : uploading
+          {uploading
               ? "正在解析订单数据…"
               : orders.length
                 ? `${channelName(channel)}文件解析完成`
                 : "拖拽订单文件到这里，或点击上传"}
         </h3>
         <p>支持 Excel / CSV，自动识别 gmv、gsv 工作表，单文件建议不超过 50MB</p>
-        <button className="primary" disabled={channel === "all"}>
+        <button className="primary">
           {orders.length ? "重新选择文件" : "选择订单文件"}
         </button>
       </div>
+      </>}
       {orders.length > 0 && (
         <>
           <div className="mini-kpis import-result">

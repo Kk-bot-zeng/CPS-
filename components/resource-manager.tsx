@@ -19,6 +19,7 @@ type RecordRow = {
   name: string;
   platform: string | null;
   platform_account?: string | null;
+  match_id?: string | null;
   contact_name?: string | null;
   phone: string | null;
   wechat: string | null;
@@ -107,6 +108,7 @@ export default function ResourceManager({
         名称: "示例团长",
         "渠道(京东/抖音/天猫)": "抖音",
         平台账号: "",
+        "匹配ID/联盟ID": "2030000000",
         所属团长: "",
         联系人: "张三",
         手机号: "",
@@ -123,6 +125,7 @@ export default function ResourceManager({
         名称: "示例达人",
         "渠道(京东/抖音/天猫)": "抖音",
         平台账号: "dy123",
+        "匹配ID/联盟ID": "",
         所属团长: "示例团长",
         联系人: "",
         手机号: "",
@@ -157,6 +160,7 @@ export default function ResourceManager({
             r["渠道(京东/抖音/天猫)"]
           ] || r["渠道(京东/抖音/天猫)"],
         account: String(r["平台账号"]),
+        matchId: String(r["匹配ID/联盟ID"] || ""),
         leader: String(r["所属团长"]),
         contact: String(r["联系人"]),
         phone: String(r["手机号"]),
@@ -252,6 +256,7 @@ export default function ResourceManager({
                 <th>名称</th>
                 <th>渠道</th>
                 <th>账号/联系人</th>
+                <th>匹配ID</th>
                 <th>所属团长</th>
                 <th>地区</th>
                 <th>状态</th>
@@ -273,6 +278,7 @@ export default function ResourceManager({
                       ? r.platform_account || "-"
                       : r.contact_name || "-"}
                   </td>
+                  <td>{r.match_id || "-"}</td>
                   <td>
                     {r.kind === "达人" ? r.leaders?.name || "未分配" : "-"}
                   </td>
@@ -369,6 +375,9 @@ function ResourceModal({
               value={value.name || ""}
               onChange={(e) => set("name", e.target.value)}
             />
+          </Field>
+          <Field label={value.platform === "jd" ? "匹配ID/联盟ID" : "匹配ID（选填）"}>
+            <input value={value.match_id || ""} onChange={(e) => set("match_id", e.target.value)} placeholder={value.platform === "jd" ? "填写推客PIN中的联盟ID" : "选填"} />
           </Field>
           {value.kind === "达人" ? (
             <>
@@ -467,6 +476,7 @@ function BatchModal({
                 <th>身份</th>
                 <th>名称</th>
                 <th>渠道</th>
+                <th>匹配ID/联盟ID</th>
                 <th>所属团长</th>
                 <th>地区</th>
               </tr>
@@ -477,6 +487,7 @@ function BatchModal({
                   <td>{r.type}</td>
                   <td>{r.name}</td>
                   <td>{channelName(r.channel)}</td>
+                  <td>{r.matchId || "-"}</td>
                   <td>{r.leader || "-"}</td>
                   <td>
                     {[r.province, r.city, r.district].filter(Boolean).join(" ")}
