@@ -102,6 +102,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   if (loading) return <Loading />;
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
+  const today = summary.daily.at(-1);
   return (
     <>
       <div className="page-title">
@@ -137,6 +138,15 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
           </button>
         </div>
       </div>
+      <section className="command-brief">
+        <div className="command-brief-copy">
+          <span className="live-dot">● 实时经营中</span>
+          <strong>今日销售概览</strong>
+          <small>{today ? `${today.date} · 已同步 ${today.orders.toLocaleString()} 笔订单` : "等待订单数据同步"}</small>
+        </div>
+        <div className="command-brief-stat"><span>今日销售额</span><b>{today ? money(today.gmv) : "¥0"}</b></div>
+        <div className="command-brief-stat"><span>今日销售台数</span><b>{today ? `${today.qty.toLocaleString()} 台` : "0 台"}</b></div>
+      </section>
       <div className="kpi-grid">
         <RealKpi
           label="GMV全部订单"
@@ -173,7 +183,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
               const maxQty = Math.max(...summary.daily.map((x) => x.qty), 1);
               return <div className="combo-day" key={d.date} title={`${d.date}：${money(d.gmv)}，${d.qty}台`}>
                 <div className="combo-bars"><i style={{height:`${Math.max(3,d.gmv/maxGmv*100)}%`}}/><b style={{height:`${Math.max(3,d.qty/maxQty*100)}%`}}/></div>
-                <span>{d.date.slice(5)}</span>
+                <span>{`${d.date.slice(5,7)}/${d.date.slice(8,10)}`}</span>
               </div>;
             })}
           </div>
@@ -249,7 +259,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                   <i
                     style={{ height: `${Math.max(4, (d.gmv / max) * 100)}%` }}
                   />
-                  <span>{d.date.slice(5)}</span>
+                  <span>{`${d.date.slice(5,7)}/${d.date.slice(8,10)}`}</span>
                 </div>
               );
             })}
