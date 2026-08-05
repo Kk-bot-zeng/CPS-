@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
 import AmapMap, { type MapResource } from "@/components/amap-map";
+import BusinessSelect from "@/components/business-select";
 
 type Summary = {
   gmv: number;
@@ -143,14 +144,8 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             value={end}
             onChange={(e) => setEnd(e.target.value)}
           />
-          <select value={talent} onChange={(e) => setTalent(e.target.value)}>
-            <option value="all">全部达人</option>
-            {(summary?.talents || []).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
-          </select>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="all">全部型号</option>
-            {(summary?.products || []).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
-          </select>
+          <BusinessSelect value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...(summary?.talents || []).map((x) => ({ value:x.name, label:x.name }))]} />
+          <BusinessSelect value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...(summary?.products || []).map((x) => ({ value:x.name, label:x.name }))]} />
           <button onClick={load}>
             <RefreshCw size={14} />
             刷新

@@ -43,6 +43,7 @@ import {
 import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
 import ResourceManager from "@/components/resource-manager";
 import JdSyncCard from "@/components/jd-sync-card";
+import BusinessSelect from "@/components/business-select";
 
 type Page = "总览" | "达人/团长管理" | "商品分析" | "数据导入" | "地图中心";
 type Order = {
@@ -229,20 +230,7 @@ export default function DashboardApp() {
             <h1>{page}</h1>
           </div>
           <div className="top-actions">
-            <label className="channel-switch">
-              <span>当前渠道</span>
-              <select
-                value={channel}
-                onChange={(e) => setChannel(e.target.value as ChannelFilter)}
-              >
-                <option value="all">全部渠道</option>
-                {CHANNELS.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <BusinessSelect className="channel-business-select" label="当前渠道" value={channel} onChange={(value) => setChannel(value as ChannelFilter)} options={[{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />
             <div className="global-search">
               <Search size={17} />
               <input placeholder="搜索达人、团长或商品" />
