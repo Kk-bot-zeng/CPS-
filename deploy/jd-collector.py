@@ -11,6 +11,11 @@ lock = threading.Lock()
 def service_active(name): return subprocess.run(["systemctl","is-active","--quiet",name]).returncode == 0
 def browsers_ready(): return service_active("jd-browser.service") and service_active("jd-browser-store2.service")
 
+def start_browsers():
+    for name in ("jd-browser.service", "jd-browser-store2.service"):
+        if not service_active(name):
+            subprocess.run(["sudo", "/bin/systemctl", "start", name], check=True)
+
 def run_export():
     with lock:
         state.update(status="running", message="正在获取两个京东店铺最近30天的有效订单")
@@ -33,6 +38,14 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200,{**state,"ready":browsers_ready() and state.get("ready",False),"store1":service_active("jd-browser.service"),"store2":service_active("jd-browser-store2.service")})
     def do_POST(self):
         if not self.valid(): return self.reply(403,{"error":"forbidden"})
+        if self.path == "/prepare":
+            try:
+                start_browsers()
+                state.update(ready=browsers_ready(), status="ready" if browsers_ready() else "needs_attention",
+                             message="两个京东浏览器已恢复，请确认登录状态后开始同步")
+                return self.reply(200, state)
+            except Exception as error:
+                return self.reply(503, {"error":str(error)})
         if self.path=="/start":
             if not browsers_ready(): return self.reply(409,{"error":"两个京东浏览器未全部运行"})
             if state["status"]=="running": return self.reply(409,state)
