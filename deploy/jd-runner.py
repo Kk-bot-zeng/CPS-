@@ -131,9 +131,8 @@ def import_rows(files):
     try:
         with conn, conn.cursor() as cur:
             job_id = str(uuid.uuid4())
-            # The owner requested that all unmatched JD rows are discarded, not stored for later review.
-            cur.execute("delete from orders where platform='jd'")
-            cur.execute("delete from import_jobs where channel='jd'")
+            # Keep all previously matched dates. Repeated recent orders are updated by source_key;
+            # unmatched rows are never inserted and therefore never occupy historical storage.
             cur.execute("insert into import_jobs(id,channel,file_name,status,total_rows,created_at) values(%s,'jd',%s,'processing',%s,now())", (job_id, "京东双店自动同步", len(all_rows)))
             sql = """insert into orders(platform,source_key,order_no,external_product_id,merchant_code,quantity,paid_at,order_status,payable_amount,talent_name_raw,is_talent,product_name_raw,model_name,import_job_id,source_payload,updated_at)
               values(%(platform)s,%(source_key)s,%(order_no)s,%(external_product_id)s,%(merchant_code)s,%(quantity)s,%(paid_at)s,%(order_status)s,%(payable_amount)s,%(talent_name_raw)s,%(is_talent)s,%(product_name_raw)s,%(model_name)s,%(import_job_id)s,%(source_payload)s,now())

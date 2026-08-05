@@ -75,3 +75,6 @@
 @media(max-width:1400px){.dashboard-grid{grid-template-columns:1fr}.real-bars{height:280px}}
 @media(max-width:900px){.page-title{align-items:flex-start;gap:14px;flex-wrap:wrap}.real-actions{justify-content:flex-start}.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.kpi-grid{grid-template-columns:1fr}.data-table table{min-width:650px}}
+
+/* Balanced operating filters: touch-friendly and visually consistent. */
+.real-actions{gap:10px}.real-actions input,.real-actions select,.real-actions button{height:42px;font-size:12px;border-radius:8px;padding:0 13px;background:#fff}.real-actions input{min-width:142px}.real-actions select{min-width:174px}.real-actions button{min-width:76px;font-weight:700}.channel-switch{height:42px;padding:0 14px;border-radius:9px}.channel-switch span{font-size:11px}.channel-switch select{font-size:12px}
