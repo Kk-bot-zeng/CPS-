@@ -66,6 +66,8 @@ type Leader = {
 };
 const money = (v: number) =>
   v >= 1e8 ? `¥${(v / 1e8).toFixed(2)}亿` : `¥${(v / 1e4).toFixed(1)}万`;
+const seriesOf = (name: string) =>
+  (name.replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "").replace(/\s+/g, "").replace(/(Plus|Ultra|Pro)/i, " $1").trim() || name);
 const responseCache = new Map<string, { value: unknown; at: number }>();
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const isGet = !init?.method || init.method === "GET";
@@ -88,6 +90,8 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [model, setModel] = useState("all");
   const [productView, setProductView] = useState<"model" | "series">("model");
   const [expandedTalent, setExpandedTalent] = useState("");
+  const [expandedTalentSeries, setExpandedTalentSeries] = useState("");
+  const [selectedSeries, setSelectedSeries] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -111,6 +115,13 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
   const today = summary.daily.at(-1);
   const rankedProducts = productView === "model" ? summary.products : summary.seriesProducts;
+  const seriesTalents = selectedSeries
+    ? summary.talentModels.filter((x) => seriesOf(x.model) === selectedSeries).reduce((map, x) => {
+        const row = map.get(x.talent) || { name: x.talent, qty: 0, orders: 0, gmv: 0 };
+        row.qty += x.qty; row.orders += x.orders; row.gmv += x.gmv; map.set(x.talent, row); return map;
+      }, new Map<string, { name: string; qty: number; orders: number; gmv: number }>())
+    : new Map<string, { name: string; qty: number; orders: number; gmv: number }>();
+  const selectedSeriesTalents = [...seriesTalents.values()].sort((a, b) => b.qty - a.qty);
   return (
     <>
       <div className="page-title">
@@ -186,26 +197,17 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
       <div className="analytics-chart-grid">
         <div className="panel analytics-wide">
           <RealHead title="每日销售金额与台数趋势" />
-          <div className="combo-chart">
-            {summary.daily.map((d) => {
-              const maxGmv = Math.max(...summary.daily.map((x) => x.gmv), 1);
-              const maxQty = Math.max(...summary.daily.map((x) => x.qty), 1);
-              return <div className="combo-day" key={d.date} title={`${d.date}：${money(d.gmv)}，${d.qty}台`}>
-                <div className="combo-bars"><i style={{height:`${Math.max(3,d.gmv/maxGmv*100)}%`}}/><b style={{height:`${Math.max(3,d.qty/maxQty*100)}%`}}/></div>
-                <span>{`${d.date.slice(5,7)}/${d.date.slice(8,10)}`}</span>
-              </div>;
-            })}
-          </div>
-          <div className="chart-legend"><span><i className="gmv-dot"/>销售金额</span><span><i className="qty-dot"/>销售台数</span></div>
+          <SalesLineChart rows={summary.daily} />
         </div>
         <div className="panel">
           <div className="panel-head ranking-head"><div><h3>{productView === "model" ? "型号销量排名" : "系列销量排名"}</h3><p>实时业务数据</p></div><div className="ranking-switch"><button className={productView === "model" ? "active" : ""} onClick={() => setProductView("model")}>具体型号</button><button className={productView === "series" ? "active" : ""} onClick={() => setProductView("series")}>产品系列</button></div></div>
           <div className="rank-bars">
-            {rankedProducts.slice(0, 10).map((p, i) => <div key={p.name}>
+            {rankedProducts.slice(0, 10).map((p, i) => <div key={p.name} className={productView === "series" ? "clickable-rank" : ""} onClick={() => productView === "series" && setSelectedSeries(selectedSeries === p.name ? "" : p.name)}>
               <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(rankedProducts[0]?.qty||1,1)*100)}%`}}/></i></p>
               <strong>{p.qty}台</strong><small>{money(p.gmv)}</small>
             </div>)}
           </div>
+          {productView === "series" && selectedSeries && <div className="series-talent-panel"><div className="series-talent-title"><b>{selectedSeries} · 达人/团长销售排名</b><button onClick={() => setSelectedSeries("")}>收起</button></div>{selectedSeriesTalents.map((x, i) => <div className="series-talent-row" key={x.name}><span>{i + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong></div>)}</div>}
         </div>
       </div>
       <div className="dashboard-grid">
@@ -241,7 +243,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
               <tbody>
                 {summary.talents.slice(0, 12).map((t, i) => (
                   <Fragment key={t.name}>
-                  <tr className={`talent-rank-row ${expandedTalent === t.name ? "expanded" : ""}`} onClick={() => setExpandedTalent(expandedTalent === t.name ? "" : t.name)}>
+                  <tr className={`talent-rank-row ${expandedTalent === t.name ? "expanded" : ""}`} onClick={() => { setExpandedTalent(expandedTalent === t.name ? "" : t.name); setExpandedTalentSeries(""); }}>
                     <td>{i + 1}</td>
                     <td>
                       <b>{t.name}</b>
@@ -253,7 +255,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                     <td>{t.gmv ? ((t.gsv / t.gmv) * 100).toFixed(1) : 0}%</td>
                     <td><button className="detail-toggle">{expandedTalent === t.name ? "收起" : "查看型号"}</button></td>
                   </tr>
-                  {expandedTalent === t.name && <tr className="talent-model-detail"><td colSpan={8}><div><b>{t.name} · 型号销售明细</b><table><thead><tr><th>型号</th><th>销售台数</th><th>订单数</th><th>销售金额</th></tr></thead><tbody>{summary.talentModels.filter((x) => x.talent === t.name).map((x) => <tr key={x.model}><td>{x.model}</td><td>{x.qty} 台</td><td>{x.orders}</td><td>{money(x.gmv)}</td></tr>)}</tbody></table></div></td></tr>}
+                  {expandedTalent === t.name && <TalentSeriesDetail talent={t.name} rows={summary.talentModels.filter((x) => x.talent === t.name)} expanded={expandedTalentSeries} setExpanded={setExpandedTalentSeries} />}
                   </Fragment>
                 ))}
               </tbody>
@@ -282,6 +284,18 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
       </div>
     </>
   );
+}
+function TalentSeriesDetail({ talent, rows, expanded, setExpanded }: { talent: string; rows: Summary["talentModels"]; expanded: string; setExpanded: (x: string) => void }) {
+  const series = [...rows.reduce((map, x) => { const name = seriesOf(x.model); const v = map.get(name) || { name, qty: 0, orders: 0, gmv: 0 }; v.qty += x.qty; v.orders += x.orders; v.gmv += x.gmv; map.set(name, v); return map; }, new Map<string, { name: string; qty: number; orders: number; gmv: number }>()).values()].sort((a,b)=>b.qty-a.qty);
+  return <tr className="talent-model-detail"><td colSpan={8}><div><b>{talent} · 系列销售明细（点击系列查看尺寸型号）</b><table><thead><tr><th>产品系列</th><th>销售台数</th><th>订单数</th><th>销售金额</th><th></th></tr></thead><tbody>{series.map((s) => <Fragment key={s.name}><tr className="series-detail-row" onClick={() => setExpanded(expanded === s.name ? "" : s.name)}><td><b>{s.name}</b></td><td>{s.qty} 台</td><td>{s.orders}</td><td>{money(s.gmv)}</td><td>{expanded === s.name ? "收起" : "查看型号"}</td></tr>{expanded === s.name && <tr className="model-nested-row"><td colSpan={5}><div>{rows.filter((x) => seriesOf(x.model) === s.name).sort((a,b)=>b.qty-a.qty).map((x) => <p key={x.model}><b>{x.model}</b><span>{x.qty} 台</span><span>{x.orders} 单</span><strong>{money(x.gmv)}</strong></p>)}</div></td></tr>}</Fragment>)}</tbody></table></div></td></tr>;
+}
+function SalesLineChart({ rows }: { rows: Summary["daily"] }) {
+  if (!rows.length) return <div className="empty">暂无趋势数据</div>;
+  const width = 1000, height = 260, left = 58, right = 22, top = 34, bottom = 42;
+  const max = Math.max(...rows.map((x) => x.gmv), 1), plotW = width-left-right, plotH = height-top-bottom;
+  const points = rows.map((d,i) => ({ ...d, x:left+(rows.length===1?plotW/2:i*plotW/(rows.length-1)), y:top+(1-d.gmv/max)*plotH }));
+  const path = points.map((p,i)=>`${i?"L":"M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  return <div className="sales-line-chart"><div className="line-legend"><i/>销售金额</div><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">{[0,.25,.5,.75,1].map((r)=><g key={r}><line x1={left} x2={width-right} y1={top+r*plotH} y2={top+r*plotH}/><text x={left-8} y={top+r*plotH+4}>{Math.round(max*(1-r)/10000)}万</text></g>)}<path className="line-area" d={`${path} L${points.at(-1)!.x},${top+plotH} L${points[0].x},${top+plotH} Z`}/><path className="line-path" d={path}/>{points.map((p,i)=><g className="line-point" key={p.date}><circle cx={p.x} cy={p.y} r="4"/><title>{`${p.date}：${money(p.gmv)}，${p.qty}台`}</title>{(rows.length<=12||i%Math.ceil(rows.length/10)===0||i===rows.length-1)&&<><text className="line-value" x={p.x} y={Math.max(15,p.y-10)}>{p.gmv>=10000?`${(p.gmv/10000).toFixed(1)}万`:Math.round(p.gmv)}</text><text className="line-date" x={p.x} y={height-12}>{p.date.slice(5).replace("-","/")}</text></>}</g>)}</svg></div>;
 }
 function RealKpi({
   label,
