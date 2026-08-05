@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Download,
   Edit3,
@@ -22,9 +22,9 @@ type Summary = {
   activeTalents: number;
   talents: { name: string; gmv: number; gsv: number; orders: number; qty: number }[];
   products: { name: string; gmv: number; qty: number; talents: number; orders: number }[];
+  seriesProducts: { name: string; gmv: number; qty: number; talents: number; orders: number }[];
   daily: { date: string; gmv: number; gsv: number; qty: number; orders: number }[];
-  talentModels: { talent: string; model: string; gmv: number; qty: number }[];
-  details: { date: string; orderNo: string; talent: string; model: string; qty: number; amount: number }[];
+  talentModels: { talent: string; model: string; gmv: number; qty: number; orders: number }[];
 };
 type Talent = {
   id: string;
@@ -86,6 +86,8 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [end, setEnd] = useState("2026-12-31");
   const [talent, setTalent] = useState("all");
   const [model, setModel] = useState("all");
+  const [productView, setProductView] = useState<"model" | "series">("model");
+  const [expandedTalent, setExpandedTalent] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -108,6 +110,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
   const today = summary.daily.at(-1);
+  const rankedProducts = productView === "model" ? summary.products : summary.seriesProducts;
   return (
     <>
       <div className="page-title">
@@ -196,10 +199,10 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
           <div className="chart-legend"><span><i className="gmv-dot"/>销售金额</span><span><i className="qty-dot"/>销售台数</span></div>
         </div>
         <div className="panel">
-          <RealHead title="型号销量排名" />
+          <div className="panel-head ranking-head"><div><h3>{productView === "model" ? "型号销量排名" : "系列销量排名"}</h3><p>实时业务数据</p></div><div className="ranking-switch"><button className={productView === "model" ? "active" : ""} onClick={() => setProductView("model")}>具体型号</button><button className={productView === "series" ? "active" : ""} onClick={() => setProductView("series")}>产品系列</button></div></div>
           <div className="rank-bars">
-            {summary.products.slice(0, 10).map((p, i) => <div key={p.name}>
-              <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(summary.products[0]?.qty||1,1)*100)}%`}}/></i></p>
+            {rankedProducts.slice(0, 10).map((p, i) => <div key={p.name}>
+              <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(rankedProducts[0]?.qty||1,1)*100)}%`}}/></i></p>
               <strong>{p.qty}台</strong><small>{money(p.gmv)}</small>
             </div>)}
           </div>
@@ -208,7 +211,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
       <div className="dashboard-grid">
         <div className="panel wide">
           <RealHead
-            title="达人销售排行"
+            title="达人/团长销售排行"
             action={() =>
               exportCsv(
                 "达人排行.csv",
@@ -232,11 +235,13 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                   <th>订单数</th>
                   <th>销售台数</th>
                   <th>有效率</th>
+                  <th>销售明细</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.talents.slice(0, 12).map((t, i) => (
-                  <tr key={t.name}>
+                  <Fragment key={t.name}>
+                  <tr className={`talent-rank-row ${expandedTalent === t.name ? "expanded" : ""}`} onClick={() => setExpandedTalent(expandedTalent === t.name ? "" : t.name)}>
                     <td>{i + 1}</td>
                     <td>
                       <b>{t.name}</b>
@@ -246,7 +251,10 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                     <td>{t.orders}</td>
                     <td>{t.qty}</td>
                     <td>{t.gmv ? ((t.gsv / t.gmv) * 100).toFixed(1) : 0}%</td>
+                    <td><button className="detail-toggle">{expandedTalent === t.name ? "收起" : "查看型号"}</button></td>
                   </tr>
+                  {expandedTalent === t.name && <tr className="talent-model-detail"><td colSpan={8}><div><b>{t.name} · 型号销售明细</b><table><thead><tr><th>型号</th><th>销售台数</th><th>订单数</th><th>销售金额</th></tr></thead><tbody>{summary.talentModels.filter((x) => x.talent === t.name).map((x) => <tr key={x.model}><td>{x.model}</td><td>{x.qty} 台</td><td>{x.orders}</td><td>{money(x.gmv)}</td></tr>)}</tbody></table></div></td></tr>}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -271,18 +279,6 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             })}
           </div>
         </div>
-      </div>
-      <div className="panel analytics-detail">
-        <RealHead title="达人 × 型号销售贡献" />
-        <div className="data-table"><table><thead><tr><th>达人</th><th>型号</th><th>销售台数</th><th>销售金额</th></tr></thead>
-          <tbody>{summary.talentModels.slice(0, 50).map((x) => <tr key={`${x.talent}-${x.model}`}><td><b>{x.talent}</b></td><td>{x.model}</td><td>{x.qty}</td><td>{money(x.gmv)}</td></tr>)}</tbody>
-        </table></div>
-      </div>
-      <div className="panel analytics-detail">
-        <RealHead title="每日销售明细" action={() => exportCsv("抖音销售明细.csv", summary.details)} />
-        <div className="data-table"><table><thead><tr><th>日期</th><th>达人</th><th>型号</th><th>台数</th><th>金额</th><th>订单号</th></tr></thead>
-          <tbody>{summary.details.slice(0, 100).map((x, i) => <tr key={`${x.orderNo}-${i}`}><td>{x.date}</td><td><b>{x.talent}</b></td><td>{x.model}</td><td>{x.qty}</td><td>{money(x.amount)}</td><td>{x.orderNo}</td></tr>)}</tbody>
-        </table></div>
       </div>
     </>
   );
