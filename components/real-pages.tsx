@@ -94,7 +94,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [productView, setProductView] = useState<"model" | "series">("model");
   const [expandedTalent, setExpandedTalent] = useState("");
   const [expandedTalentSeries, setExpandedTalentSeries] = useState("");
-  const [selectedSeries, setSelectedSeries] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -126,13 +126,13 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
   const today = summary.daily.at(-1);
   const rankedProducts = productView === "model" ? summary.products : summary.seriesProducts;
-  const seriesTalents = selectedSeries
-    ? summary.talentModels.filter((x) => seriesOf(x.model) === selectedSeries).reduce((map, x) => {
+  const productTalents = selectedProduct
+    ? summary.talentModels.filter((x) => productView === "series" ? seriesOf(x.model) === selectedProduct : x.model === selectedProduct).reduce((map, x) => {
         const row = map.get(x.talent) || { name: x.talent, qty: 0, orders: 0, gmv: 0 };
         row.qty += x.qty; row.orders += x.orders; row.gmv += x.gmv; map.set(x.talent, row); return map;
       }, new Map<string, { name: string; qty: number; orders: number; gmv: number }>())
     : new Map<string, { name: string; qty: number; orders: number; gmv: number }>();
-  const selectedSeriesTalents = [...seriesTalents.values()].sort((a, b) => b.qty - a.qty);
+  const selectedProductTalents = [...productTalents.values()].sort((a, b) => b.qty - a.qty);
   return (
     <>
       <div className="page-title">
@@ -205,14 +205,16 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
           <SalesLineChart rows={summary.daily} />
         </div>
         <div className="panel">
-          <div className="panel-head ranking-head"><div><h3>{productView === "model" ? "型号销量排名" : "系列销量排名"}</h3><p>实时业务数据</p></div><div className="ranking-switch"><button className={productView === "model" ? "active" : ""} onClick={() => setProductView("model")}>具体型号</button><button className={productView === "series" ? "active" : ""} onClick={() => setProductView("series")}>产品系列</button></div></div>
+          <div className="panel-head ranking-head"><div><h3>{productView === "model" ? "型号销量排名" : "系列销量排名"}</h3><p>实时业务数据</p></div><div className="ranking-switch"><button className={productView === "model" ? "active" : ""} onClick={() => { setProductView("model"); setSelectedProduct(""); }}>具体型号</button><button className={productView === "series" ? "active" : ""} onClick={() => { setProductView("series"); setSelectedProduct(""); }}>产品系列</button></div></div>
           <div className="rank-bars">
-            {rankedProducts.slice(0, 10).map((p, i) => <div key={p.name} className={productView === "series" ? "clickable-rank" : ""} onClick={() => productView === "series" && setSelectedSeries(selectedSeries === p.name ? "" : p.name)}>
-              <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(rankedProducts[0]?.qty||1,1)*100)}%`}}/></i></p>
-              <strong>{p.qty}台</strong><small>{money(p.gmv)}</small>
-            </div>)}
+            {rankedProducts.slice(0, 10).map((p, i) => <Fragment key={p.name}>
+              <div className={`clickable-rank ${selectedProduct === p.name ? "expanded" : ""}`} onClick={() => setSelectedProduct(selectedProduct === p.name ? "" : p.name)}>
+                <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(rankedProducts[0]?.qty||1,1)*100)}%`}}/></i></p>
+                <strong>{p.qty}台</strong><small>{money(p.gmv)}</small>
+              </div>
+              {selectedProduct === p.name && <div className="series-talent-panel inline"><div className="series-talent-title"><b>{p.name} · 达人/团长销售排名</b><button onClick={() => setSelectedProduct("")}>收起</button></div>{selectedProductTalents.map((x, rank) => <div className="series-talent-row" key={x.name}><span>{rank + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong></div>)}</div>}
+            </Fragment>)}
           </div>
-          {productView === "series" && selectedSeries && <div className="series-talent-panel"><div className="series-talent-title"><b>{selectedSeries} · 达人/团长销售排名</b><button onClick={() => setSelectedSeries("")}>收起</button></div>{selectedSeriesTalents.map((x, i) => <div className="series-talent-row" key={x.name}><span>{i + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong></div>)}</div>}
         </div>
       </div>
       <div className="dashboard-grid">
@@ -267,25 +269,6 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             </table>
           </div>
         </div>
-        <div className="panel">
-          <RealHead title="近30个销售日" />
-          <div className="real-bars">
-            {summary.daily.slice(-30).map((d) => {
-              const max = Math.max(
-                ...summary.daily.slice(-30).map((x) => x.gmv),
-                1,
-              );
-              return (
-                <div key={d.date} title={`${d.date} ${money(d.gmv)}`}>
-                  <i
-                    style={{ height: `${Math.max(4, (d.gmv / max) * 100)}%` }}
-                  />
-                  <span>{`${d.date.slice(5,7)}/${d.date.slice(8,10)}`}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
     </>
   );
@@ -296,11 +279,14 @@ function TalentSeriesDetail({ talent, rows, expanded, setExpanded }: { talent: s
 }
 function SalesLineChart({ rows }: { rows: Summary["daily"] }) {
   if (!rows.length) return <div className="empty">暂无趋势数据</div>;
-  const width = 1000, height = 260, left = 58, right = 22, top = 34, bottom = 42;
-  const max = Math.max(...rows.map((x) => x.gmv), 1), plotW = width-left-right, plotH = height-top-bottom;
-  const points = rows.map((d,i) => ({ ...d, x:left+(rows.length===1?plotW/2:i*plotW/(rows.length-1)), y:top+(1-d.gmv/max)*plotH }));
+  const first = new Date(rows[0].date), last = new Date(rows.at(-1)!.date);
+  const useMonthly = (last.getTime() - first.getTime()) / 86400000 > 62;
+  const chartRows = useMonthly ? [...rows.reduce((map, row) => { const key = row.date.slice(0, 7); const value = map.get(key) || { date: key, gmv: 0, gsv: 0, qty: 0, orders: 0 }; value.gmv += row.gmv; value.gsv += row.gsv; value.qty += row.qty; value.orders += row.orders; map.set(key, value); return map; }, new Map<string, Summary["daily"][number]>()).values()] : rows;
+  const width = Math.max(1000, chartRows.length * (useMonthly ? 100 : 46)), height = 260, left = 58, right = 22, top = 34, bottom = 42;
+  const max = Math.max(...chartRows.map((x) => x.gmv), 1), plotW = width-left-right, plotH = height-top-bottom;
+  const points = chartRows.map((d,i) => ({ ...d, x:left+(chartRows.length===1?plotW/2:i*plotW/(chartRows.length-1)), y:top+(1-d.gmv/max)*plotH }));
   const path = points.map((p,i)=>`${i?"L":"M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  return <div className="sales-line-chart"><div className="line-legend"><i/>销售金额</div><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">{[0,.25,.5,.75,1].map((r)=><g key={r}><line x1={left} x2={width-right} y1={top+r*plotH} y2={top+r*plotH}/><text x={left-8} y={top+r*plotH+4}>{Math.round(max*(1-r)/10000)}万</text></g>)}<path className="line-area" d={`${path} L${points.at(-1)!.x},${top+plotH} L${points[0].x},${top+plotH} Z`}/><path className="line-path" d={path}/>{points.map((p,i)=><g className="line-point" key={p.date}><circle cx={p.x} cy={p.y} r="4"/><title>{`${p.date}：${money(p.gmv)}，${p.qty}台`}</title>{(rows.length<=12||i%Math.ceil(rows.length/10)===0||i===rows.length-1)&&<><text className="line-value" x={p.x} y={Math.max(15,p.y-10)}>{p.gmv>=10000?`${(p.gmv/10000).toFixed(1)}万`:Math.round(p.gmv)}</text><text className="line-date" x={p.x} y={height-12}>{p.date.slice(5).replace("-","/")}</text></>}</g>)}</svg></div>;
+  return <div className="sales-line-chart"><div className="line-legend"><i/>销售金额 <small>{useMonthly ? "跨月范围已按月汇总" : "按日展示，可左右滑动"}</small></div><div className="sales-line-scroll"><svg viewBox={`0 0 ${width} ${height}`} style={{width}}>{[0,.25,.5,.75,1].map((r)=><g key={r}><line x1={left} x2={width-right} y1={top+r*plotH} y2={top+r*plotH}/><text x={left-8} y={top+r*plotH+4}>{Math.round(max*(1-r)/10000)}万</text></g>)}<path className="line-area" d={`${path} L${points.at(-1)!.x},${top+plotH} L${points[0].x},${top+plotH} Z`}/><path className="line-path" d={path}/>{points.map((p,i)=><g className="line-point" key={p.date}><circle cx={p.x} cy={p.y} r="4"/><title>{`${p.date}：${money(p.gmv)}，${p.qty}台`}</title>{(chartRows.length<=12||i%Math.ceil(chartRows.length/10)===0||i===chartRows.length-1)&&<><text className="line-value" x={p.x} y={Math.max(15,p.y-10)}>{p.gmv>=10000?`${(p.gmv/10000).toFixed(1)}万`:Math.round(p.gmv)}</text><text className="line-date" x={p.x} y={height-12}>{useMonthly ? p.date : p.date.slice(5).replace("-","/")}</text></>}</g>)}</svg></div></div>;
 }
 function RealKpi({
   label,
