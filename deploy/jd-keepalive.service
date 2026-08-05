@@ -1,0 +1,10 @@
+[Unit]
+Description=JD persisted-session keepalive and login check
+After=jd-browser.service jd-browser-store2.service
+
+[Service]
+Type=oneshot
+User=zlq
+WorkingDirectory=/srv/cps-data/jd-collector
+ExecStart=/usr/bin/flock -n /srv/cps-data/jd-collector/logs/browser.lock /usr/bin/python3 /srv/cps-data/jd-collector/jd-keepalive.py
+

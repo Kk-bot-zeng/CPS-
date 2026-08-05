@@ -20,7 +20,7 @@ def run_export():
     with lock:
         state.update(status="running", message="正在获取两个京东店铺最近30天的有效订单")
         try:
-            result = subprocess.run(["/usr/bin/python3",f"{ROOT}/runner.py"],capture_output=True,text=True,timeout=1200)
+            result = subprocess.run(["/usr/bin/flock","-w","120",f"{ROOT}/logs/browser.lock","/usr/bin/python3",f"{ROOT}/runner.py"],capture_output=True,text=True,timeout=1320)
             state["lastRun"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             if result.returncode == 0:
                 payload = json.loads(result.stdout.strip().splitlines()[-1])
