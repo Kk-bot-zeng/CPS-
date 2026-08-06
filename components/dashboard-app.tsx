@@ -935,6 +935,7 @@ function ImportPage({
           {orders.length ? "重新选择文件" : "选择订单文件"}
         </button>
       </div>
+      {!orders.length && saveMessage && <div className="import-parse-message">{saveMessage}</div>}
       </>}
       {orders.length > 0 && (
         <>
