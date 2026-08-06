@@ -739,12 +739,24 @@ function ImportPage({
     setFileName(file.name);
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const name = wb.SheetNames.includes("总表") ? "总表" : wb.SheetNames.includes("gmv") ? "gmv" : wb.SheetNames[0];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-        wb.Sheets[name],
-        { raw: false, dateNF: "yyyy-mm-dd hh:mm:ss" },
-      );
+      const rows = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+        const worker = new Worker(new URL("../workers/order-parser.worker.ts", import.meta.url));
+        const timer = window.setTimeout(() => {
+          worker.terminate();
+          reject(new Error("文件解析超过3分钟，请检查文件是否损坏或拆分后重试"));
+        }, 180_000);
+        worker.onmessage = (event) => {
+          window.clearTimeout(timer);
+          worker.terminate();
+          event.data?.ok ? resolve(event.data.rows) : reject(new Error(event.data?.error || "文件解析失败"));
+        };
+        worker.onerror = () => {
+          window.clearTimeout(timer);
+          worker.terminate();
+          reject(new Error("文件解析线程异常，请重新选择文件"));
+        };
+        worker.postMessage(buf, [buf]);
+      });
       const num = (v: unknown) => Number(String(v ?? 0).replace(/,/g, ""));
       setOrders(
         rows
@@ -769,6 +781,9 @@ function ImportPage({
           });})
           .filter((r) => r.orderNo && r.paidAt && r.qty > 0),
       );
+    } catch (error) {
+      setOrders([]);
+      setSaveMessage(error instanceof Error ? error.message : "订单文件解析失败");
     } finally {
       setUploading(false);
     }

@@ -5,12 +5,16 @@ import { isChannel } from "@/lib/channels";
 type OrderRow = {
   order_no: string; payable_amount: number; quantity: number; order_status: string;
   talent_name_raw: string; model_name: string | null; product_name_raw: string | null;
-  paid_at: string | Date; is_talent: boolean;
+  paid_at: string | number | Date; is_talent: boolean;
 };
 
-function dateKey(value: string | Date | null | undefined) {
+function dateKey(value: string | number | Date | null | undefined) {
   if (!value) return "未知日期";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "number") {
+    const excelDate = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+    return Number.isNaN(excelDate.getTime()) ? "未知日期" : excelDate.toISOString().slice(0, 10);
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
 }

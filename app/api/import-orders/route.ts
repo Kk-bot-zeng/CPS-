@@ -8,6 +8,16 @@ type ImportOrder = {
   talent: string; product: string; model?: string;
 };
 
+function normalizePaidAt(value: unknown) {
+  if (typeof value === "number" || /^\d+(?:\.\d+)?$/.test(String(value ?? "").trim())) {
+    const serial = Number(value);
+    const date = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  const date = new Date(String(value ?? "").trim());
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function isRealTalent(value: string) {
   const name = value.trim();
   if (!name || name === "-" || name === "—") return false;
@@ -29,6 +39,9 @@ export async function POST(request: Request) {
   const orders = body.orders || [];
   if (!orders.length || orders.length > 1000)
     return NextResponse.json({ error: "每批必须包含1至1000条订单" }, { status: 400 });
+  const invalidDates = orders.filter((order) => !normalizePaidAt(order.paidAt)).length;
+  if (invalidDates)
+    return NextResponse.json({ error: `有 ${invalidDates} 条订单的支付时间无法识别，请检查表格日期格式` }, { status: 400 });
 
   let jobId = body.importJobId;
   if (body.firstBatch || !jobId) {
@@ -59,7 +72,7 @@ export async function POST(request: Request) {
     return {
       platform: body.channel, source_key: order.sourceKey, order_no: order.orderNo,
       external_product_id: order.productId || null, merchant_code: order.merchantCode || null,
-      quantity: order.qty, paid_at: order.paidAt, order_status: order.status,
+      quantity: order.qty, paid_at: normalizePaidAt(order.paidAt)!, order_status: order.status,
       payable_amount: order.amount, talent_name_raw: rawTalent || "-",
       is_talent: isRealTalent(rawTalent), product_name_raw: order.product || null,
       model_name: matchedModel || order.model || null, import_job_id: jobId,
