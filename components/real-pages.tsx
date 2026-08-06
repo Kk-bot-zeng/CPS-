@@ -117,7 +117,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
     jsonFetch<Summary>(`/api/dashboard?start=${start}&end=${end}&channel=${channel}&talent=all&model=all`)
       .then((data) => {
         setTalentOptions(data.talents.map((x) => ({ value: x.name, label: x.name })));
-        setModelOptions(data.products.map((x) => ({ value: x.name, label: x.name })));
+        setModelOptions(data.seriesProducts.map((x) => ({ value: x.name, label: x.name })));
       })
       .catch(() => {});
   }, [start, end, channel]);
@@ -154,8 +154,8 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             value={end}
             onChange={(e) => setEnd(e.target.value)}
           />
-          <BusinessSelect value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
-          <BusinessSelect value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
+           <BusinessSelect searchable value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
+           <BusinessSelect searchable value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
           <button onClick={load}>
             <RefreshCw size={14} />
             刷新
@@ -212,7 +212,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
                 <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(rankedProducts[0]?.qty||1,1)*100)}%`}}/></i></p>
               <strong>{p.qty}台</strong><small><i>GMV {money(p.gmv)}</i><i>GSV {money(Number(p.gsv) || 0)}</i></small>
               </div>
-              {selectedProduct === p.name && <div className="series-talent-panel inline"><div className="series-talent-title"><b>{p.name} · 达人/团长销售排名</b><button onClick={() => setSelectedProduct("")}>收起</button></div><div className="series-talent-columns"><span>排名 / 达人团长</span><span>台数</span><span>订单</span><span>GMV</span><span>GSV</span></div>{selectedProductTalents.map((x, rank) => <div className="series-talent-row" key={x.name}><span>{rank + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong><strong>{money(x.gsv)}</strong></div>)}</div>}
+               {selectedProduct === p.name && <div className="series-talent-panel inline"><div className="series-talent-title"><b>{p.name} · 达人/团长销售排名</b><button onClick={() => setSelectedProduct("")}>收起</button></div><div className="series-talent-columns"><span>排名</span><span>达人/团长</span><span>台数</span><span>订单</span><span>GMV</span><span>GSV</span></div>{selectedProductTalents.map((x, rank) => <div className="series-talent-row" key={x.name}><span>{rank + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong><strong>{money(x.gsv)}</strong></div>)}</div>}
             </Fragment>)}
           </div>
         </div>

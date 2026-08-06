@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { isChannel } from "@/lib/channels";
+import { pool } from "@/lib/db";
 
 type ImportOrder = {
   sourceKey: string; orderNo: string; productId: string; merchantCode: string;
   qty: number; paidAt: string; status: string; amount: number;
   talent: string; product: string; model?: string;
+  plan?: string;
 };
 
 const mappingCache = new Map<string, {
@@ -84,22 +86,44 @@ export async function POST(request: Request) {
     }
   }
 
-  const rows = orders.map((order) => {
+  let acceptedOrders = orders;
+  const jdTalentNames = new Map<string, string>();
+  if (body.channel === "jd") {
+    const { rows: plans } = await pool.query("select i.plan_name from plan_whitelist_items i join plan_whitelist_uploads u on u.id=i.upload_id where u.channel='jd' and u.active=true and i.enabled=true");
+    const allowedPlans = new Set(plans.map((row) => String(row.plan_name).trim()));
+    const ids = [...new Set(orders.flatMap((order) => String(order.talent || "").match(/\d{6,}/g) || []))];
+    if (ids.length) {
+      const [talents, leaders] = await Promise.all([
+        auth.admin.from("talents").select("name,match_id").eq("platform", "jd").in("match_id", ids),
+        auth.admin.from("leaders").select("name,match_id").eq("platform", "jd").in("match_id", ids),
+      ]);
+      for (const item of [...(talents.data || []), ...(leaders.data || [])]) if (item.match_id) jdTalentNames.set(String(item.match_id), item.name);
+    }
+    acceptedOrders = orders.filter((order) => {
+      const matchedId = (String(order.talent || "").match(/\d{6,}/g) || []).find((id) => jdTalentNames.has(id));
+      return (!allowedPlans.size || allowedPlans.has(String(order.plan || "").trim())) && mapping.has(order.merchantCode) && Boolean(matchedId);
+    });
+  }
+
+  const rows = acceptedOrders.map((order) => {
     const rawTalent = String(order.talent || "").trim();
     const matchedModel = mapping.get(order.merchantCode);
+    const matchedId = body.channel === "jd" ? (rawTalent.match(/\d{6,}/g) || []).find((id) => jdTalentNames.has(id)) : undefined;
     return {
       platform: body.channel, source_key: order.sourceKey, order_no: order.orderNo,
       external_product_id: order.productId || null, merchant_code: order.merchantCode || null,
       quantity: order.qty, paid_at: normalizePaidAt(order.paidAt)!, order_status: order.status,
-      payable_amount: order.amount, talent_name_raw: rawTalent || "-",
-      is_talent: isRealTalent(rawTalent), product_name_raw: order.product || null,
+      payable_amount: order.amount, talent_name_raw: matchedId ? jdTalentNames.get(matchedId)! : (rawTalent || "-"),
+      is_talent: body.channel === "jd" ? true : isRealTalent(rawTalent), product_name_raw: order.product || null,
       model_name: matchedModel || order.model || null, import_job_id: jobId,
       source_payload: order, updated_at: new Date().toISOString(),
     };
   });
-  const { error } = await auth.admin.from("orders")
-    .upsert(rows, { onConflict: "platform,source_key" });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (rows.length) {
+    const { error } = await auth.admin.from("orders")
+      .upsert(rows, { onConflict: "platform,source_key" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
   if (body.finalBatch) {
     await auth.admin.from("import_jobs").update({

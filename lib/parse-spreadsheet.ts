@@ -2,6 +2,7 @@ type ParseOptions = {
   preferredSheets?: string[];
   timeoutMs?: number;
   mode?: "rows" | "orders";
+  channel?: string;
 };
 
 export async function parseSpreadsheet<T = Record<string, unknown>>(
@@ -32,7 +33,7 @@ export async function parseSpreadsheet<T = Record<string, unknown>>(
       reject(new Error("文件解析线程异常，请重新选择文件"));
     };
     worker.postMessage(
-      { buffer, preferredSheets: options.preferredSheets || [], mode: options.mode || "rows" },
+      { buffer, preferredSheets: options.preferredSheets || [], mode: options.mode || "rows", channel: options.channel || "" },
       [buffer],
     );
   });

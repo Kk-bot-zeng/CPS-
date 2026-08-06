@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 
 self.onmessage = async (
-  event: MessageEvent<{ buffer: ArrayBuffer; preferredSheets?: string[]; mode?: "rows" | "orders" }>,
+  event: MessageEvent<{ buffer: ArrayBuffer; preferredSheets?: string[]; mode?: "rows" | "orders"; channel?: string }>,
 ) => {
   try {
     const wb = XLSX.read(event.data.buffer, {
@@ -25,24 +25,30 @@ self.onmessage = async (
     if (event.data.mode === "orders") {
       const num = (value: unknown) => Number(String(value ?? 0).replace(/,/g, ""));
       const orders = rows.map((row, index) => {
-        const orderNo = String(row["主订单编号"] ?? "").trim();
-        const productId = String(row["商品ID"] ?? "").trim();
-        const merchantCode = String(row["商家编码"] ?? "").trim();
-        const paidAt = String(row["支付完成时间"] ?? "").trim();
+        const jd = event.data.channel === "jd";
+        const orderNo = String(jd ? (row["订单编号"] ?? row["订单号"] ?? "") : (row["主订单编号"] ?? "")).trim().replace(/^\t+|\t+$/g, "");
+        const productId = String(jd ? (row["商品编号"] ?? row["SKU"] ?? row["SKU ID"] ?? "") : (row["商品ID"] ?? "")).trim();
+        const merchantCode = String(jd ? (row["商品编号"] ?? row["SKU"] ?? row["SKU ID"] ?? "") : (row["商家编码"] ?? "")).trim();
+        const paidAt = String(jd ? (row["下单日期"] ?? row["下单时间"] ?? row["订单时间"] ?? "") : (row["支付完成时间"] ?? "")).trim();
+        const qty = num(jd ? (row["商品数量"] ?? row["数量"] ?? 1) : row["商品数量"]);
+        const amount = num(jd ? (row["计佣金额"] ?? row["实际支付金额"] ?? row["订单金额"] ?? 0) : row["订单应付金额"]);
+        const valid = String(row["是否有效"] ?? "").trim();
         return {
           sourceKey: `${orderNo}|${productId}|${merchantCode}|${paidAt}|${index + 2}`,
           orderNo,
           productId,
           merchantCode,
-          qty: num(row["商品数量"]),
+          qty,
           paidAt,
-          status: String(row["订单状态"] ?? ""),
-          amount: num(row["订单应付金额"]),
-          talent: String(row["达人昵称"] ?? "").trim(),
-          product: String(row["选购商品"] ?? ""),
+          status: jd ? (valid === "有效" ? "已成交" : String(row["订单状态"] ?? valid)) : String(row["订单状态"] ?? ""),
+          amount,
+          talent: String(jd ? (row["推客pin"] ?? row["推客PIN"] ?? row["团长名称"] ?? "") : (row["达人昵称"] ?? "")).trim(),
+          product: String(jd ? (row["SKU名称"] ?? row["商品名称"] ?? "") : (row["选购商品"] ?? "")),
           model: String(row["型号"] ?? ""),
+          plan: String(jd ? (row["所属计划/活动"] ?? row["计划名称"] ?? "") : "").trim(),
+          valid,
         };
-      }).filter((row) => row.orderNo && row.paidAt && row.qty > 0);
+      }).filter((row) => row.orderNo && row.paidAt && row.qty > 0 && (event.data.channel !== "jd" || !row.valid || row.valid === "有效"));
       self.postMessage({ ok: true, rows: orders });
     } else {
       self.postMessage({ ok: true, rows });

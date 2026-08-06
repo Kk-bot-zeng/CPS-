@@ -738,7 +738,9 @@ function ImportPage({
       const parsedOrders = await parseSpreadsheet<Order>(file, {
         preferredSheets: ["总表", "gmv"],
         mode: "orders",
+        channel,
       });
+      if (!parsedOrders.length) throw new Error(channel === "jd" ? "未识别到京东订单，请确认文件包含订单编号、商品编号、下单日期等字段" : "未识别到可导入的订单数据");
       setOrders(parsedOrders);
     } catch (error) {
       setOrders([]);
@@ -776,6 +778,7 @@ function ImportPage({
     setProgress(0);
     setSaveMessage("");
     let jobId = "";
+    let writtenRows = 0;
     try {
       const batchSize = 1000;
       const batches = Math.ceil(orders.length / batchSize);
@@ -796,10 +799,11 @@ function ImportPage({
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "写入失败");
         jobId = result.importJobId;
+        writtenRows += Number(result.processed) || 0;
         setProgress(Math.round(((i + 1) / batches) * 100));
       }
       setSaveMessage(
-        `已成功写入 ${orders.length.toLocaleString()} 条订单，重复订单已自动更新`,
+        `已成功写入 ${writtenRows.toLocaleString()} 条订单${channel === "jd" ? "（已按有效订单、计划白名单、SKU及团长ID筛选）" : "，重复订单已自动更新"}`,
       );
       await loadJobs();
     } catch (err) {

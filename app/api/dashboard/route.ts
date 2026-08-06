@@ -8,6 +8,10 @@ type OrderRow = {
   paid_at: string | number | Date; is_talent: boolean;
 };
 
+function seriesOf(modelName: string) {
+  return modelName.replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "").replace(/\s+/g, "").replace(/(Plus|Ultra|Pro)/i, " $1").trim() || modelName;
+}
+
 function dateKey(value: string | number | Date | null | undefined) {
   if (!value) return "未知日期";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -38,10 +42,9 @@ export async function GET(request: Request) {
   if (end) query = query.lte("paid_at", `${end}T23:59:59`);
   if (channel !== "all") query = query.eq("platform", channel);
   if (talent !== "all") query = query.eq("talent_name_raw", talent);
-  if (model !== "all") query = query.eq("model_name", model);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const all = (data || []) as OrderRow[];
+  const all = ((data || []) as OrderRow[]).filter((row) => model === "all" || seriesOf(row.model_name || "型号未匹配") === model);
 
   const talentMap = new Map<string, { gmv: number; gsv: number; orders: Set<string>; qty: number }>();
   const modelMap = new Map<string, { gmv: number; gsv: number; qty: number; talents: Set<string>; orders: Set<string> }>();
@@ -64,11 +67,7 @@ export async function GET(request: Request) {
     const p = modelMap.get(modelName) || { gmv: 0, gsv: 0, qty: 0, talents: new Set(), orders: new Set() };
     p.gmv += amount; p.gsv += valid ? amount : 0; p.qty += qty; p.talents.add(o.talent_name_raw); p.orders.add(o.order_no);
     modelMap.set(modelName, p);
-    const seriesName = (modelName
-      .replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "")
-      .replace(/\s+/g, "")
-      .replace(/(Plus|Ultra|Pro)/i, " $1")
-      .trim() || modelName);
+    const seriesName = seriesOf(modelName);
     const s = seriesMap.get(seriesName) || { gmv: 0, gsv: 0, qty: 0, talents: new Set(), orders: new Set() };
     s.gmv += amount; s.gsv += valid ? amount : 0; s.qty += qty; s.talents.add(o.talent_name_raw); s.orders.add(o.order_no);
     seriesMap.set(seriesName, s);
