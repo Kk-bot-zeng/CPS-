@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   MapPinned,
   Menu,
-  PackageSearch,
   Search,
   Settings,
   Sparkles,
@@ -37,7 +36,6 @@ import {
   LeaderManager,
   RealMap,
   RealOverview,
-  RealProducts,
   TalentManager,
 } from "@/components/real-pages";
 import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
@@ -46,7 +44,7 @@ import JdSyncCard from "@/components/jd-sync-card";
 import BusinessSelect from "@/components/business-select";
 import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 
-type Page = "总览" | "达人/团长管理" | "商品分析" | "数据导入" | "地图中心";
+type Page = "总览" | "达人/团长管理" | "数据导入" | "地图中心";
 type Order = {
   sourceKey: string;
   orderNo: string;
@@ -73,7 +71,6 @@ type ImportJob = {
 const nav: { label: Page; icon: React.ElementType }[] = [
   { label: "总览", icon: LayoutDashboard },
   { label: "达人/团长管理", icon: UsersRound },
-  { label: "商品分析", icon: PackageSearch },
   { label: "数据导入", icon: FileSpreadsheet },
   { label: "地图中心", icon: MapPinned },
 ];
@@ -251,7 +248,6 @@ export default function DashboardApp() {
         <section className="content">
           {page === "总览" && <RealOverview channel={channel} />}
           {page === "达人/团长管理" && <ResourceManager channel={channel} />}
-          {page === "商品分析" && <RealProducts channel={channel} />}
           {page === "数据导入" && (
             <ImportPage
               channel={channel}

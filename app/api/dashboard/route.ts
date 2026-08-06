@@ -44,10 +44,10 @@ export async function GET(request: Request) {
   const all = (data || []) as OrderRow[];
 
   const talentMap = new Map<string, { gmv: number; gsv: number; orders: Set<string>; qty: number }>();
-  const modelMap = new Map<string, { gmv: number; qty: number; talents: Set<string>; orders: Set<string> }>();
-  const seriesMap = new Map<string, { gmv: number; qty: number; talents: Set<string>; orders: Set<string> }>();
+  const modelMap = new Map<string, { gmv: number; gsv: number; qty: number; talents: Set<string>; orders: Set<string> }>();
+  const seriesMap = new Map<string, { gmv: number; gsv: number; qty: number; talents: Set<string>; orders: Set<string> }>();
   const dailyMap = new Map<string, { gmv: number; gsv: number; qty: number; orders: Set<string> }>();
-  const crossMap = new Map<string, { talent: string; model: string; gmv: number; qty: number; orders: Set<string> }>();
+  const crossMap = new Map<string, { talent: string; model: string; gmv: number; gsv: number; qty: number; orders: Set<string> }>();
   let gmv = 0, gsv = 0, quantity = 0;
   const orderSet = new Set<string>(), validOrderSet = new Set<string>();
   for (const o of all) {
@@ -61,29 +61,29 @@ export async function GET(request: Request) {
     const t = talentMap.get(o.talent_name_raw) || { gmv: 0, gsv: 0, orders: new Set(), qty: 0 };
     t.gmv += amount; t.gsv += valid ? amount : 0; t.orders.add(o.order_no); t.qty += qty;
     talentMap.set(o.talent_name_raw, t);
-    const p = modelMap.get(modelName) || { gmv: 0, qty: 0, talents: new Set(), orders: new Set() };
-    p.gmv += amount; p.qty += qty; p.talents.add(o.talent_name_raw); p.orders.add(o.order_no);
+    const p = modelMap.get(modelName) || { gmv: 0, gsv: 0, qty: 0, talents: new Set(), orders: new Set() };
+    p.gmv += amount; p.gsv += valid ? amount : 0; p.qty += qty; p.talents.add(o.talent_name_raw); p.orders.add(o.order_no);
     modelMap.set(modelName, p);
     const seriesName = (modelName
       .replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "")
       .replace(/\s+/g, "")
       .replace(/(Plus|Ultra|Pro)/i, " $1")
       .trim() || modelName);
-    const s = seriesMap.get(seriesName) || { gmv: 0, qty: 0, talents: new Set(), orders: new Set() };
-    s.gmv += amount; s.qty += qty; s.talents.add(o.talent_name_raw); s.orders.add(o.order_no);
+    const s = seriesMap.get(seriesName) || { gmv: 0, gsv: 0, qty: 0, talents: new Set(), orders: new Set() };
+    s.gmv += amount; s.gsv += valid ? amount : 0; s.qty += qty; s.talents.add(o.talent_name_raw); s.orders.add(o.order_no);
     seriesMap.set(seriesName, s);
     const d = dailyMap.get(day) || { gmv: 0, gsv: 0, qty: 0, orders: new Set() };
     d.gmv += amount; d.gsv += valid ? amount : 0; d.qty += qty; d.orders.add(o.order_no);
     dailyMap.set(day, d);
     const key = `${o.talent_name_raw}\u0000${modelName}`;
-    const c = crossMap.get(key) || { talent: o.talent_name_raw, model: modelName, gmv: 0, qty: 0, orders: new Set<string>() };
-    c.gmv += amount; c.qty += qty; c.orders.add(o.order_no); crossMap.set(key, c);
+    const c = crossMap.get(key) || { talent: o.talent_name_raw, model: modelName, gmv: 0, gsv: 0, qty: 0, orders: new Set<string>() };
+    c.gmv += amount; c.gsv += valid ? amount : 0; c.qty += qty; c.orders.add(o.order_no); crossMap.set(key, c);
   }
   const talents = [...talentMap].map(([name, v]) => ({ name, gmv: v.gmv, gsv: v.gsv, orders: v.orders.size, qty: v.qty }))
     .sort((a, b) => b.gmv - a.gmv);
-  const products = [...modelMap].map(([name, v]) => ({ name, gmv: v.gmv, qty: v.qty, talents: v.talents.size, orders: v.orders.size }))
+  const products = [...modelMap].map(([name, v]) => ({ name, gmv: v.gmv, gsv: v.gsv, qty: v.qty, talents: v.talents.size, orders: v.orders.size }))
     .sort((a, b) => b.qty - a.qty);
-  const seriesProducts = [...seriesMap].map(([name, v]) => ({ name, gmv: v.gmv, qty: v.qty, talents: v.talents.size, orders: v.orders.size }))
+  const seriesProducts = [...seriesMap].map(([name, v]) => ({ name, gmv: v.gmv, gsv: v.gsv, qty: v.qty, talents: v.talents.size, orders: v.orders.size }))
     .sort((a, b) => b.qty - a.qty);
   const daily = [...dailyMap].map(([date, v]) => ({ date, gmv: v.gmv, gsv: v.gsv, qty: v.qty, orders: v.orders.size }))
     .sort((a, b) => a.date.localeCompare(b.date));

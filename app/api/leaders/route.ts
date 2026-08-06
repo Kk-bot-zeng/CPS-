@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const { data, error } = await query;
   if (error)
     return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json(data);
+  return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
 }
 export async function POST(request: Request) {
   const auth = await requireApiUser();

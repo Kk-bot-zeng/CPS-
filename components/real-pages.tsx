@@ -22,10 +22,10 @@ type Summary = {
   quantity: number;
   activeTalents: number;
   talents: { name: string; gmv: number; gsv: number; orders: number; qty: number }[];
-  products: { name: string; gmv: number; qty: number; talents: number; orders: number }[];
-  seriesProducts: { name: string; gmv: number; qty: number; talents: number; orders: number }[];
+  products: { name: string; gmv: number; gsv: number; qty: number; talents: number; orders: number }[];
+  seriesProducts: { name: string; gmv: number; gsv: number; qty: number; talents: number; orders: number }[];
   daily: { date: string; gmv: number; gsv: number; qty: number; orders: number }[];
-  talentModels: { talent: string; model: string; gmv: number; qty: number; orders: number }[];
+  talentModels: { talent: string; model: string; gmv: number; gsv: number; qty: number; orders: number }[];
 };
 type Talent = {
   id: string;
@@ -128,10 +128,10 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const rankedProducts = productView === "model" ? summary.products : summary.seriesProducts;
   const productTalents = selectedProduct
     ? summary.talentModels.filter((x) => productView === "series" ? seriesOf(x.model) === selectedProduct : x.model === selectedProduct).reduce((map, x) => {
-        const row = map.get(x.talent) || { name: x.talent, qty: 0, orders: 0, gmv: 0 };
-        row.qty += x.qty; row.orders += x.orders; row.gmv += x.gmv; map.set(x.talent, row); return map;
-      }, new Map<string, { name: string; qty: number; orders: number; gmv: number }>())
-    : new Map<string, { name: string; qty: number; orders: number; gmv: number }>();
+        const row = map.get(x.talent) || { name: x.talent, qty: 0, orders: 0, gmv: 0, gsv: 0 };
+        row.qty += x.qty; row.orders += x.orders; row.gmv += x.gmv; row.gsv += Number(x.gsv) || 0; map.set(x.talent, row); return map;
+      }, new Map<string, { name: string; qty: number; orders: number; gmv: number; gsv: number }>())
+    : new Map<string, { name: string; qty: number; orders: number; gmv: number; gsv: number }>();
   const selectedProductTalents = [...productTalents.values()].sort((a, b) => b.qty - a.qty);
   return (
     <>
@@ -172,7 +172,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
         <div className="command-brief-stat"><span>今日销售额</span><b>{today ? money(today.gmv) : "¥0"}</b></div>
         <div className="command-brief-stat"><span>今日销售台数</span><b>{today ? `${today.qty.toLocaleString()} 台` : "0 台"}</b></div>
       </section>
-      <div className="kpi-grid">
+      <div className={`kpi-grid ${channel === "jd" ? "jd-kpis" : ""}`}>
         <RealKpi
           label="GMV全部订单"
           value={money(summary.gmv)}
@@ -183,11 +183,11 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
           value={money(summary.gsv)}
           note={`${summary.validOrders.toLocaleString()}笔有效订单`}
         />
-        <RealKpi
+        {channel !== "jd" && <RealKpi
           label="金额有效率"
           value={`${rate.toFixed(1)}%`}
           note="GSV ÷ GMV"
-        />
+        />}
         <RealKpi
           label="活跃达人"
           value={String(summary.activeTalents)}
@@ -210,9 +210,9 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             {rankedProducts.slice(0, 10).map((p, i) => <Fragment key={p.name}>
               <div className={`clickable-rank ${selectedProduct === p.name ? "expanded" : ""}`} onClick={() => setSelectedProduct(selectedProduct === p.name ? "" : p.name)}>
                 <span>{i + 1}</span><p><b>{p.name}</b><i><em style={{width:`${Math.max(4,p.qty/Math.max(rankedProducts[0]?.qty||1,1)*100)}%`}}/></i></p>
-                <strong>{p.qty}台</strong><small>{money(p.gmv)}</small>
+              <strong>{p.qty}台</strong><small><i>GMV {money(p.gmv)}</i><i>GSV {money(Number(p.gsv) || 0)}</i></small>
               </div>
-              {selectedProduct === p.name && <div className="series-talent-panel inline"><div className="series-talent-title"><b>{p.name} · 达人/团长销售排名</b><button onClick={() => setSelectedProduct("")}>收起</button></div>{selectedProductTalents.map((x, rank) => <div className="series-talent-row" key={x.name}><span>{rank + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong></div>)}</div>}
+              {selectedProduct === p.name && <div className="series-talent-panel inline"><div className="series-talent-title"><b>{p.name} · 达人/团长销售排名</b><button onClick={() => setSelectedProduct("")}>收起</button></div><div className="series-talent-columns"><span>排名 / 达人团长</span><span>台数</span><span>订单</span><span>GMV</span><span>GSV</span></div>{selectedProductTalents.map((x, rank) => <div className="series-talent-row" key={x.name}><span>{rank + 1}</span><b>{x.name}</b><em>{x.qty}台</em><small>{x.orders}单</small><strong>{money(x.gmv)}</strong><strong>{money(x.gsv)}</strong></div>)}</div>}
             </Fragment>)}
           </div>
         </div>
@@ -274,8 +274,8 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   );
 }
 function TalentSeriesDetail({ talent, rows, expanded, setExpanded }: { talent: string; rows: Summary["talentModels"]; expanded: string; setExpanded: (x: string) => void }) {
-  const series = [...rows.reduce((map, x) => { const name = seriesOf(x.model); const v = map.get(name) || { name, qty: 0, orders: 0, gmv: 0 }; v.qty += x.qty; v.orders += x.orders; v.gmv += x.gmv; map.set(name, v); return map; }, new Map<string, { name: string; qty: number; orders: number; gmv: number }>()).values()].sort((a,b)=>b.qty-a.qty);
-  return <tr className="talent-model-detail"><td colSpan={8}><div><b>{talent} · 系列销售明细（点击系列查看尺寸型号）</b><div className="talent-series-grid"><div className="talent-series-head"><span>产品系列</span><span>销售台数</span><span>订单数</span><span>销售金额</span><span /></div>{series.map((s) => <div className="talent-series-group" key={s.name}><button className="talent-series-row" onClick={() => setExpanded(expanded === s.name ? "" : s.name)}><b>{s.name}</b><span>{s.qty} 台</span><span>{s.orders}</span><span>{money(s.gmv)}</span><em>{expanded === s.name ? "收起" : "查看型号"}</em></button>{expanded === s.name && <div className="model-nested-list">{rows.filter((x) => seriesOf(x.model) === s.name).sort((a,b)=>b.qty-a.qty).map((x) => <p key={x.model}><b>{x.model}</b><span>{x.qty} 台</span><span>{x.orders} 单</span><strong>{money(x.gmv)}</strong></p>)}</div>}</div>)}</div></div></td></tr>;
+  const series = [...rows.reduce((map, x) => { const name = seriesOf(x.model); const v = map.get(name) || { name, qty: 0, orders: 0, gmv: 0, gsv: 0 }; v.qty += x.qty; v.orders += x.orders; v.gmv += x.gmv; v.gsv += Number(x.gsv) || 0; map.set(name, v); return map; }, new Map<string, { name: string; qty: number; orders: number; gmv: number; gsv: number }>()).values()].sort((a,b)=>b.qty-a.qty);
+  return <tr className="talent-model-detail"><td colSpan={8}><div><b>{talent} · 系列销售明细（点击系列查看尺寸型号）</b><div className="talent-series-grid"><div className="talent-series-head"><span>产品系列</span><span>销售台数</span><span>订单数</span><span>GMV</span><span>GSV</span><span /></div>{series.map((s) => <div className="talent-series-group" key={s.name}><button className="talent-series-row" onClick={() => setExpanded(expanded === s.name ? "" : s.name)}><b>{s.name}</b><span>{s.qty} 台</span><span>{s.orders}</span><span>{money(s.gmv)}</span><span>{money(s.gsv)}</span><em>{expanded === s.name ? "收起" : "查看型号"}</em></button>{expanded === s.name && <div className="model-nested-list">{rows.filter((x) => seriesOf(x.model) === s.name).sort((a,b)=>b.qty-a.qty).map((x) => <p key={x.model}><b>{x.model}</b><span>{x.qty} 台</span><span>{x.orders} 单</span><strong>{money(x.gmv)}</strong><strong>{money(x.gsv)}</strong><i /></p>)}</div>}</div>)}</div></div></td></tr>;
 }
 function SalesLineChart({ rows }: { rows: Summary["daily"] }) {
   if (!rows.length) return <div className="empty">暂无趋势数据</div>;
@@ -540,51 +540,6 @@ export function LeaderManager({ channel }: { channel: ChannelFilter }) {
   );
 }
 
-export function RealProducts({ channel }: { channel: ChannelFilter }) {
-  const [data, setData] = useState<Summary | null>(null);
-  useEffect(() => {
-    jsonFetch<Summary>(`/api/dashboard?channel=${channel}`)
-      .then(setData)
-      .catch(() => {});
-  }, [channel]);
-  if (!data) return <Loading />;
-  return (
-    <>
-      <ManagerTitle
-        title={`商品分析 · ${channel === "all" ? "全部渠道" : channelName(channel)}`}
-        desc="按订单商品名称自动汇总"
-      />
-      <div className="panel">
-        <RealHead
-          title="商品销售排行"
-          action={() => exportCsv("商品排行.csv", data.products)}
-        />
-        <div className="product-list">
-          {data.products.map((p, i) => (
-            <div key={p.name}>
-              <span className={`rank r${i}`}>{i + 1}</span>
-              <p>
-                <b>{p.name}</b>
-                <small>
-                  {p.talents}位达人 · {p.qty}件
-                </small>
-              </p>
-              <div className="product-bar">
-                <i
-                  style={{
-                    width: `${Math.max(4, (p.gmv / (data.products[0]?.gmv || 1)) * 100)}%`,
-                  }}
-                />
-              </div>
-              <strong>{money(p.gmv)}</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
 export function RealMap({ channel }: { channel: ChannelFilter }) {
   const [talents, setTalents] = useState<Talent[]>([]);
   const [leaders, setLeaders] = useState<Leader[]>([]);
@@ -599,8 +554,8 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
   }, [selected]);
   useEffect(() => {
     Promise.all([
-      jsonFetch<Talent[]>(`/api/talents?channel=${channel}`),
-      jsonFetch<Leader[]>(`/api/leaders?channel=${channel}`),
+      fetch(`/api/talents?channel=${channel}&map=1`, { cache: "no-store" }).then((r) => r.json()) as Promise<Talent[]>,
+      fetch(`/api/leaders?channel=${channel}&map=1`, { cache: "no-store" }).then((r) => r.json()) as Promise<Leader[]>,
     ])
       .then(([t, l]) => {
         setTalents(t);
@@ -638,7 +593,7 @@ export function RealMap({ channel }: { channel: ChannelFilter }) {
       ].filter(
         (x): x is MapResource =>
           Boolean(
-            x.city || x.address || (x.longitude != null && x.latitude != null),
+            x.province || x.city || x.district || x.address || (x.longitude != null && x.latitude != null),
           ) &&
           (kind === "全部" || x.type === kind) &&
           (!q ||

@@ -87,26 +87,12 @@ export default function AmapMap({
         const geocoder = new AMap.Geocoder({ city: "全国" });
         const points: { resource: MapResource; position: [number, number] }[] =
           [];
-        for (const resource of resources.slice(0, 500)) {
-          if (cancelled) return;
-          if (resource.longitude != null && resource.latitude != null) {
-            points.push({
-              resource,
-              position: [Number(resource.longitude), Number(resource.latitude)],
-            });
-            continue;
-          }
-          const address = [
-            resource.province,
-            resource.city,
-            resource.district,
-            resource.address,
-          ]
-            .filter(Boolean)
-            .join("");
-          if (!address) continue;
-          const position = await new Promise<[number, number] | null>(
-            (resolve) => {
+        const resolveResource = async (resource: MapResource) => {
+          if (resource.longitude != null && resource.latitude != null)
+            return { resource, position: [Number(resource.longitude), Number(resource.latitude)] as [number, number] };
+          const address = [resource.province, resource.city, resource.district, resource.address].filter(Boolean).join("");
+          if (!address) return null;
+          const position = await new Promise<[number, number] | null>((resolve) => {
               geocoder.getLocation(address, (status: string, result: any) => {
                 const geocode =
                   status === "complete" ? result?.geocodes?.[0] : null;
@@ -126,9 +112,14 @@ export default function AmapMap({
                 }
                 resolve(location ? [location.lng, location.lat] : null);
               });
-            },
-          );
-          if (position) points.push({ resource, position });
+            });
+          return position ? { resource, position } : null;
+        };
+        const pending = resources.slice(0, 500);
+        for (let index = 0; index < pending.length; index += 8) {
+          if (cancelled) return;
+          const batch = await Promise.all(pending.slice(index, index + 8).map(resolveResource));
+          for (const point of batch) if (point) points.push(point);
         }
         const markers = points.map(({ resource, position }) => {
           const marker = new AMap.Marker({
