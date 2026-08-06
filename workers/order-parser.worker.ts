@@ -35,17 +35,23 @@ self.onmessage = async (
         const zeros = exponent - decimalPlaces;
         return `${negative ? "-" : ""}${zeros >= 0 ? digits + "0".repeat(zeros) : `${digits.slice(0, digits.length + zeros)}.${digits.slice(digits.length + zeros)}`}`;
       };
+      const jdDate = (value: unknown) => {
+        if (!(value instanceof Date)) return String(value ?? "").trim();
+        const rounded = new Date(Math.round(value.getTime() / 86400000) * 86400000);
+        return `${rounded.toISOString().slice(0, 10)} 00:00:00`;
+      };
       const orders = rows.map((row, index) => {
         const jd = event.data.channel === "jd";
         const orderNo = identifier(jd ? (row["订单编号"] ?? row["订单号"] ?? "") : (row["主订单编号"] ?? ""));
         const productId = identifier(jd ? (row["商品编号"] ?? row["SKU"] ?? row["SKU ID"] ?? "") : (row["商品ID"] ?? ""));
         const merchantCode = identifier(jd ? (row["商品编号"] ?? row["SKU"] ?? row["SKU ID"] ?? "") : (row["商家编码"] ?? ""));
-        const paidAt = String(jd ? (row["下单日期"] ?? row["下单时间"] ?? row["订单时间"] ?? "") : (row["支付完成时间"] ?? "")).trim();
+        const paidAtValue = jd ? (row["下单日期"] ?? row["下单时间"] ?? row["订单时间"] ?? "") : (row["支付完成时间"] ?? "");
+        const paidAt = jd ? jdDate(paidAtValue) : String(paidAtValue).trim();
         const qty = num(jd ? (row["商品数量"] ?? row["数量"] ?? 1) : row["商品数量"]);
         const amount = num(jd ? (row["计佣金额"] ?? row["实际支付金额"] ?? row["订单金额"] ?? 0) : row["订单应付金额"]);
         const valid = String(row["是否有效"] ?? "").trim();
         return {
-          sourceKey: `${orderNo}|${productId}|${merchantCode}|${paidAt}|${index + 2}`,
+          sourceKey: jd ? `manual:${orderNo}:${merchantCode}` : `${orderNo}|${productId}|${merchantCode}|${paidAt}|${index + 2}`,
           orderNo,
           productId,
           merchantCode,
