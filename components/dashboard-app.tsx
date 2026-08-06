@@ -30,6 +30,7 @@ import {
   Clock3,
   LogOut,
   Trash2,
+  Siren,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -43,8 +44,9 @@ import ResourceManager from "@/components/resource-manager";
 import JdSyncCard from "@/components/jd-sync-card";
 import BusinessSelect from "@/components/business-select";
 import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
+import SalesWarningPage, { WarningPopup, acknowledgeWarnings, loadWarnings, type WarningPayload } from "@/components/sales-warning-page";
 
-type Page = "总览" | "达人/团长管理" | "数据导入" | "地图中心";
+type Page = "总览" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心";
 type Order = {
   sourceKey: string;
   orderNo: string;
@@ -72,6 +74,7 @@ const nav: { label: Page; icon: React.ElementType }[] = [
   { label: "总览", icon: LayoutDashboard },
   { label: "达人/团长管理", icon: UsersRound },
   { label: "数据导入", icon: FileSpreadsheet },
+  { label: "动销预警", icon: Siren },
   { label: "地图中心", icon: MapPinned },
 ];
 
@@ -186,6 +189,15 @@ export default function DashboardApp() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
+  const [warningData, setWarningData] = useState<WarningPayload | null>(null);
+  const [warningDismissed, setWarningDismissed] = useState(false);
+  const refreshWarnings = () => loadWarnings("all").then(setWarningData).catch(() => {});
+  useEffect(() => { void refreshWarnings(); const timer=window.setInterval(refreshWarnings,5*60_000); return()=>window.clearInterval(timer); }, []);
+  async function viewWarnings() {
+    const keys=warningData?.rows.filter(x=>x.unread).map(x=>x.resource_key)||[];
+    await acknowledgeWarnings(keys); setWarningDismissed(true); setPage("动销预警");
+    setWarningData(x=>x?{...x,unreadCount:0,rows:x.rows.map(r=>({...r,unread:false}))}:x);
+  }
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
@@ -233,9 +245,9 @@ export default function DashboardApp() {
               <Search size={17} />
               <input placeholder="搜索达人、团长或商品" />
             </div>
-            <button className="icon-btn">
+            <button className="icon-btn" onClick={viewWarnings} aria-label="动销预警">
               <Bell size={19} />
-              <i />
+              {!!warningData?.unreadCount && <i />}
             </button>
             <div className="avatar">雷</div>
             <div className="user">
@@ -257,9 +269,11 @@ export default function DashboardApp() {
               setUploading={setUploading}
             />
           )}
+          {page === "动销预警" && <SalesWarningPage channel={channel} onRead={refreshWarnings} />}
           {page === "地图中心" && <RealMap channel={channel} />}
         </section>
       </main>
+      {!warningDismissed && warningData && <WarningPopup data={warningData} onView={viewWarnings} />}
     </div>
   );
 }
