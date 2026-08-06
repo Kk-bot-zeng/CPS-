@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
+import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 
 type Kind = "达人" | "团长";
 type RecordRow = {
@@ -161,17 +162,14 @@ export default function ResourceManager({
     XLSX.writeFile(wb, "达人团长批量导入模板.xlsx");
   }
   async function readFile(file: File) {
-    const wb = XLSX.read(await file.arrayBuffer());
-    const raw = XLSX.utils.sheet_to_json<any>(wb.Sheets[wb.SheetNames[0]], {
-      defval: "",
-    });
+    const raw = await parseSpreadsheet(file);
     setBatch(
       raw.map((r) => ({
         type: r["身份(达人/团长)"],
         name: String(r["名称"]),
         channel:
           ({ 京东: "jd", 抖音: "douyin", 天猫: "tmall" } as any)[
-            r["渠道(京东/抖音/天猫)"]
+            String(r["渠道(京东/抖音/天猫)"] || "")
           ] || r["渠道(京东/抖音/天猫)"],
         account: String(r["平台账号"]),
         matchId: String(r["匹配ID/联盟ID"] || ""),

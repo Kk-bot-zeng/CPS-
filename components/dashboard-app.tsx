@@ -44,6 +44,7 @@ import { CHANNELS, channelName, type ChannelFilter } from "@/lib/channels";
 import ResourceManager from "@/components/resource-manager";
 import JdSyncCard from "@/components/jd-sync-card";
 import BusinessSelect from "@/components/business-select";
+import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 
 type Page = "总览" | "达人/团长管理" | "商品分析" | "数据导入" | "地图中心";
 type Order = {
@@ -709,7 +710,7 @@ function ImportPage({
     const rows = kind === "plan" ? [{ "计划名称": "示例：雷鸟团长计划" }] : [{ "SKU": "100000000000", "推广名": "示例型号", "型号": "可选", "计入电视销量": "是" }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), kind === "plan" ? "计划白名单" : "SKU商品映射"); XLSX.writeFile(wb, kind === "plan" ? "京东计划白名单模板.xlsx" : "SKU商品映射模板.xlsx");
   }
-  async function loadPlans(file: File) { try { const wb=XLSX.read(await file.arrayBuffer(),{type:"array"}); const rows=XLSX.utils.sheet_to_json<Record<string,unknown>>(wb.Sheets[wb.SheetNames[0]],{raw:false}); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
+  async function loadPlans(file: File) { try { const rows=await parseSpreadsheet(file); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
   useEffect(() => {
     if (channel === "all") {
       setMappingStatus("请先选择渠道");
@@ -738,49 +739,11 @@ function ImportPage({
     setSaveMessage("");
     setFileName(file.name);
     try {
-      const buf = await file.arrayBuffer();
-      const rows = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
-        const worker = new Worker(new URL("../workers/order-parser.worker.ts", import.meta.url));
-        const timer = window.setTimeout(() => {
-          worker.terminate();
-          reject(new Error("文件解析超过3分钟，请检查文件是否损坏或拆分后重试"));
-        }, 180_000);
-        worker.onmessage = (event) => {
-          window.clearTimeout(timer);
-          worker.terminate();
-          event.data?.ok ? resolve(event.data.rows) : reject(new Error(event.data?.error || "文件解析失败"));
-        };
-        worker.onerror = () => {
-          window.clearTimeout(timer);
-          worker.terminate();
-          reject(new Error("文件解析线程异常，请重新选择文件"));
-        };
-        worker.postMessage(buf, [buf]);
+      const parsedOrders = await parseSpreadsheet<Order>(file, {
+        preferredSheets: ["总表", "gmv"],
+        mode: "orders",
       });
-      const num = (v: unknown) => Number(String(v ?? 0).replace(/,/g, ""));
-      setOrders(
-        rows
-          .map((r, index) => {
-            const orderNo = String(r["主订单编号"] ?? "").trim();
-            const productId = String(r["商品ID"] ?? "").trim();
-            const merchantCode = String(r["商家编码"] ?? "").trim();
-            const paidAt = String(r["支付完成时间"] ?? "").trim();
-            const talent = String(r["达人昵称"] ?? "").trim();
-            return ({
-            sourceKey: `${orderNo}|${productId}|${merchantCode}|${paidAt}|${index + 2}`,
-            orderNo,
-            productId,
-            merchantCode,
-            qty: num(r["商品数量"]),
-            paidAt,
-            status: String(r["订单状态"] ?? ""),
-            amount: num(r["订单应付金额"]),
-            talent,
-            product: String(r["选购商品"] ?? ""),
-            model: String(r["型号"] ?? ""),
-          });})
-          .filter((r) => r.orderNo && r.paidAt && r.qty > 0),
-      );
+      setOrders(parsedOrders);
     } catch (error) {
       setOrders([]);
       setSaveMessage(error instanceof Error ? error.message : "订单文件解析失败");
@@ -793,9 +756,7 @@ function ImportPage({
     setMappingSaving(true);
     setMappingStatus("正在解析并覆盖匹配表…");
     try {
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const sheetName = wb.SheetNames.includes("数据底表") ? "数据底表" : wb.SheetNames[0];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName], { raw: false });
+      const rows = await parseSpreadsheet(file, { preferredSheets: ["数据底表"] });
       const mappings = rows.map((r) => ({
         promotionName: String(r["推广名"] ?? "").trim(),
         modelName: String(r["型号名"] ?? "").trim(),

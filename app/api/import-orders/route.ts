@@ -8,6 +8,12 @@ type ImportOrder = {
   talent: string; product: string; model?: string;
 };
 
+const mappingCache = new Map<string, {
+  uploadId: string | null;
+  values: Map<string, string>;
+  at: number;
+}>();
+
 function normalizePaidAt(value: unknown) {
   if (typeof value === "number" || /^\d+(?:\.\d+)?$/.test(String(value ?? "").trim())) {
     const serial = Number(value);
@@ -56,13 +62,25 @@ export async function POST(request: Request) {
   const codes = [...new Set(orders.map((x) => x.merchantCode).filter(Boolean))];
   const mapping = new Map<string, string>();
   if (codes.length) {
-    const { data: upload } = await auth.admin.from("product_mapping_uploads")
-      .select("id").eq("channel", body.channel).eq("active", true).maybeSingle();
-    if (upload) {
+    let cached = mappingCache.get(body.channel);
+    if (!cached || Date.now() - cached.at > 120_000) {
+      const { data: upload } = await auth.admin.from("product_mapping_uploads")
+        .select("id").eq("channel", body.channel).eq("active", true).maybeSingle();
+      cached = { uploadId: upload?.id || null, values: new Map(), at: Date.now() };
+      mappingCache.set(body.channel, cached);
+    }
+    if (cached.uploadId) {
+      const missing = codes.filter((code) => !cached!.values.has(code));
+      if (missing.length) {
       const { data } = await auth.admin.from("product_mappings")
-        .select("merchant_code,promotion_name").eq("upload_id", upload.id)
-        .in("merchant_code", codes);
-      for (const row of data || []) mapping.set(row.merchant_code, row.promotion_name);
+          .select("merchant_code,promotion_name").eq("upload_id", cached.uploadId)
+          .in("merchant_code", missing);
+        for (const row of data || []) cached.values.set(row.merchant_code, row.promotion_name);
+      }
+      for (const code of codes) {
+        const name = cached.values.get(code);
+        if (name) mapping.set(code, name);
+      }
     }
   }
 
