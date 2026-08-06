@@ -101,7 +101,12 @@ export async function POST(request: Request) {
     }
     acceptedOrders = orders.filter((order) => {
       const matchedId = (String(order.talent || "").match(/\d{6,}/g) || []).find((id) => jdTalentNames.has(id));
-      return (!allowedPlans.size || allowedPlans.has(String(order.plan || "").trim())) && mapping.has(order.merchantCode) && Boolean(matchedId);
+      const plan = String(order.plan || "").trim();
+      const mappedModel = String(mapping.get(order.merchantCode) || "").replace(/\s+/g, "").toLowerCase();
+      const suppliedModel = String(order.model || "").replace(/\s+/g, "").toLowerCase();
+      const processedSheetMatches = !plan && Boolean(suppliedModel) && suppliedModel === mappedModel;
+      const planMatches = !allowedPlans.size || allowedPlans.has(plan) || processedSheetMatches;
+      return planMatches && Boolean(mappedModel) && Boolean(matchedId);
     });
   }
 
