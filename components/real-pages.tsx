@@ -1,6 +1,8 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  CalendarDays,
+  ChevronDown,
   Download,
   Edit3,
   MapPin,
@@ -89,12 +91,34 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [loading, setLoading] = useState(true);
   const [start, setStart] = useState("2026-01-01");
   const [end, setEnd] = useState("2026-12-31");
+  const [datePreset, setDatePreset] = useState("custom");
+  const [showCustomDates, setShowCustomDates] = useState(false);
   const [talent, setTalent] = useState("all");
   const [model, setModel] = useState("all");
   const [productView, setProductView] = useState<"model" | "series">("model");
   const [expandedTalent, setExpandedTalent] = useState("");
   const [expandedTalentSeries, setExpandedTalentSeries] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
+  const applyDatePreset = (preset: string) => {
+    const today = new Date();
+    const key = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const offset = (days: number) => { const date = new Date(today); date.setDate(date.getDate() + days); return key(date); };
+    let nextStart = key(today), nextEnd = key(today);
+    if (preset === "yesterday") nextStart = nextEnd = offset(-1);
+    if (preset === "7d") nextStart = offset(-6);
+    if (preset === "30d") nextStart = offset(-29);
+    if (preset === "week") { const day = today.getDay() || 7; nextStart = offset(1 - day); }
+    if (preset === "month") nextStart = key(new Date(today.getFullYear(), today.getMonth(), 1));
+    setStart(nextStart); setEnd(nextEnd); setDatePreset(preset); setShowCustomDates(false);
+  };
+  const comparisonRange = useMemo(() => {
+    const from = new Date(`${start}T00:00:00`), to = new Date(`${end}T00:00:00`);
+    const span = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
+    const comparisonEnd = new Date(from); comparisonEnd.setDate(comparisonEnd.getDate() - 1);
+    const comparisonStart = new Date(comparisonEnd); comparisonStart.setDate(comparisonStart.getDate() - span + 1);
+    const key = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    return `${key(comparisonStart)} ~ ${key(comparisonEnd)}`;
+  }, [start, end]);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -143,17 +167,22 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
           <p>以下数据实时读取自Supabase订单库</p>
         </div>
         <div className="real-actions">
-          <input
-            type="date"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
-          <span>至</span>
-          <input
-            type="date"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-          />
+          <div className="date-range-bar">
+            <div className="date-range-summary"><span>当前：{start} ~ {end}</span><small>对比：{comparisonRange}</small></div>
+            <button className={`date-preset ${datePreset === "realtime" ? "active" : ""}`} onClick={() => applyDatePreset("realtime")}>实时 <ChevronDown size={12}/></button>
+            <button className={`date-preset ${datePreset === "yesterday" ? "active" : ""}`} onClick={() => applyDatePreset("yesterday")}>昨天</button>
+            <button className={`date-preset ${datePreset === "7d" ? "active" : ""}`} onClick={() => applyDatePreset("7d")}>近7天</button>
+            <button className={`date-preset ${datePreset === "30d" ? "active" : ""}`} onClick={() => applyDatePreset("30d")}>近30天</button>
+            <button className={`date-preset ${datePreset === "day" ? "active" : ""}`} onClick={() => applyDatePreset("day")}>天</button>
+            <button className={`date-preset ${datePreset === "week" ? "active" : ""}`} onClick={() => applyDatePreset("week")}>周</button>
+            <button className={`date-preset ${datePreset === "month" ? "active" : ""}`} onClick={() => applyDatePreset("month")}>月</button>
+            <button className={`date-preset custom ${datePreset === "custom" ? "active" : ""}`} onClick={() => { setDatePreset("custom"); setShowCustomDates((value) => !value); }}>自定义 <CalendarDays size={13}/></button>
+            {showCustomDates && <div className="custom-date-popover">
+              <label>开始日期<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label><span>至</span>
+              <label>结束日期<input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label>
+              <button onClick={() => setShowCustomDates(false)}>确定</button>
+            </div>}
+          </div>
            <BusinessSelect searchable value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
            <BusinessSelect searchable value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
           <button onClick={load}>
