@@ -176,12 +176,14 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
             <button className={`date-preset ${datePreset === "day" ? "active" : ""}`} onClick={() => applyDatePreset("day")}>天</button>
             <button className={`date-preset ${datePreset === "week" ? "active" : ""}`} onClick={() => applyDatePreset("week")}>周</button>
             <button className={`date-preset ${datePreset === "month" ? "active" : ""}`} onClick={() => applyDatePreset("month")}>月</button>
-            <button className={`date-preset custom ${datePreset === "custom" ? "active" : ""}`} onClick={() => { setDatePreset("custom"); setShowCustomDates((value) => !value); }}>自定义 <CalendarDays size={13}/></button>
-            {showCustomDates && <div className="custom-date-popover">
-              <label>开始日期<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label><span>至</span>
-              <label>结束日期<input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label>
-              <button onClick={() => setShowCustomDates(false)}>确定</button>
-            </div>}
+            <div className="custom-date-anchor">
+              <button className={`date-preset custom ${datePreset === "custom" ? "active" : ""}`} onClick={() => { setDatePreset("custom"); setShowCustomDates((value) => !value); }} aria-expanded={showCustomDates}>自定义 <CalendarDays size={13}/></button>
+              {showCustomDates && <div className="custom-date-popover">
+                <label>开始日期<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label><span>至</span>
+                <label>结束日期<input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label>
+                <button onClick={() => setShowCustomDates(false)}>确定</button>
+              </div>}
+            </div>
           </div>
            <BusinessSelect searchable value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
            <BusinessSelect searchable value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
