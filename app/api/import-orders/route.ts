@@ -40,10 +40,14 @@ export async function POST(request: Request) {
   if (auth.error) return auth.error;
   const body = (await request.json()) as {
     channel?: string; orders?: ImportOrder[]; importJobId?: string;
+    category?: string;
     fileName?: string; firstBatch?: boolean; finalBatch?: boolean; totalRows?: number;
   };
   if (!isChannel(body.channel))
     return NextResponse.json({ error: "请先选择有效渠道" }, { status: 400 });
+  const category = body.category === "monitor" ? "monitor" : "tv";
+  if (category === "monitor" && body.channel !== "jd")
+    return NextResponse.json({ error: "显示器目前仅支持京东渠道" }, { status: 400 });
   const orders = body.orders || [];
   if (!orders.length || orders.length > 1000)
     return NextResponse.json({ error: "每批必须包含1至1000条订单" }, { status: 400 });
@@ -54,7 +58,7 @@ export async function POST(request: Request) {
   let jobId = body.importJobId;
   if (body.firstBatch || !jobId) {
     const { data, error } = await auth.admin.from("import_jobs").insert({
-      channel: body.channel, file_name: body.fileName || "订单导入.xlsx",
+      channel: body.channel, product_category: category, file_name: body.fileName || "订单导入.xlsx",
       status: "processing", created_by: auth.user.id,
     }).select("id").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -64,12 +68,13 @@ export async function POST(request: Request) {
   const codes = [...new Set(orders.map((x) => x.merchantCode).filter(Boolean))];
   const mapping = new Map<string, string>();
   if (codes.length) {
-    let cached = mappingCache.get(body.channel);
+    const cacheKey = `${category}:${body.channel}`;
+    let cached = mappingCache.get(cacheKey);
     if (!cached || Date.now() - cached.at > 120_000) {
       const { data: upload } = await auth.admin.from("product_mapping_uploads")
-        .select("id").eq("channel", body.channel).eq("active", true).maybeSingle();
+        .select("id").eq("channel", body.channel).eq("product_category", category).eq("active", true).maybeSingle();
       cached = { uploadId: upload?.id || null, values: new Map(), at: Date.now() };
-      mappingCache.set(body.channel, cached);
+      mappingCache.set(cacheKey, cached);
     }
     if (cached.uploadId) {
       const missing = codes.filter((code) => !cached!.values.has(code));
@@ -89,7 +94,7 @@ export async function POST(request: Request) {
   let acceptedOrders = orders;
   const jdTalentNames = new Map<string, string>();
   if (body.channel === "jd") {
-    const { rows: plans } = await pool.query("select i.plan_name from plan_whitelist_items i join plan_whitelist_uploads u on u.id=i.upload_id where u.channel='jd' and u.active=true and i.enabled=true");
+    const { rows: plans } = await pool.query("select i.plan_name from plan_whitelist_items i join plan_whitelist_uploads u on u.id=i.upload_id where u.channel='jd' and u.product_category=$1 and u.active=true and i.enabled=true", [category]);
     const allowedPlans = new Set(plans.map((row) => String(row.plan_name).trim()));
     const ids = [...new Set(orders.flatMap((order) => String(order.talent || "").match(/\d{6,}/g) || []))];
     if (ids.length) {
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
     const matchedModel = mapping.get(order.merchantCode);
     const matchedId = body.channel === "jd" ? (rawTalent.match(/\d{6,}/g) || []).find((id) => jdTalentNames.has(id)) : undefined;
     return {
-      platform: body.channel, source_key: order.sourceKey, order_no: order.orderNo,
+      product_category: category, platform: body.channel, source_key: order.sourceKey, order_no: order.orderNo,
       external_product_id: order.productId || null, merchant_code: order.merchantCode || null,
       quantity: order.qty, paid_at: normalizePaidAt(order.paidAt)!, order_status: order.status,
       payable_amount: order.amount, talent_name_raw: matchedId ? jdTalentNames.get(matchedId)! : (rawTalent || "-"),
@@ -126,7 +131,7 @@ export async function POST(request: Request) {
   });
   if (rows.length) {
     const { error } = await auth.admin.from("orders")
-      .upsert(rows, { onConflict: "platform,source_key" });
+      .upsert(rows, { onConflict: "product_category,platform,source_key" });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   }
 

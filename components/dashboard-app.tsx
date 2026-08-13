@@ -31,6 +31,7 @@ import {
   LogOut,
   Trash2,
   Siren,
+  MonitorPlay,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -46,7 +47,7 @@ import BusinessSelect from "@/components/business-select";
 import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 import SalesWarningPage, { WarningPopup, acknowledgeWarnings, loadWarnings, type WarningPayload } from "@/components/sales-warning-page";
 
-type Page = "总览" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心";
+type Page = "总览" | "B站操盘看板" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心";
 type ProductCategory = "tv" | "monitor";
 type Order = {
   sourceKey: string;
@@ -69,10 +70,12 @@ type ImportJob = {
   total_rows: number;
   created_at: string;
   completed_at: string | null;
+  product_category?: ProductCategory;
 };
 
 const nav: { label: Page; icon: React.ElementType }[] = [
   { label: "总览", icon: LayoutDashboard },
+  { label: "B站操盘看板", icon: MonitorPlay },
   { label: "达人/团长管理", icon: UsersRound },
   { label: "数据导入", icon: FileSpreadsheet },
   { label: "动销预警", icon: Siren },
@@ -191,6 +194,8 @@ export default function DashboardApp() {
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
   const [category, setCategory] = useState<ProductCategory>("tv");
+  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板";
+  const effectiveChannel: ChannelFilter = category === "monitor" && (page === "总览" || page === "数据导入") ? "jd" : channel;
   const [warningData, setWarningData] = useState<WarningPayload | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
   const refreshWarnings = () => loadWarnings("all").then(setWarningData).catch(() => {});
@@ -238,8 +243,8 @@ export default function DashboardApp() {
       <main className="main-area">
         <header className="topbar">
           <div className="top-actions">
-            {page === "总览" && <BusinessSelect className="category-business-select" label="当前品类" value={category} onChange={(value) => setCategory(value as ProductCategory)} options={[{ value:"tv", label:"TV" }, { value:"monitor", label:"显示器" }]} />}
-            <BusinessSelect className="channel-business-select" label="当前渠道" value={channel} onChange={(value) => setChannel(value as ChannelFilter)} options={[{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />
+            {categoryPage && <BusinessSelect className="category-business-select" label="当前品类" value={category} onChange={(value) => setCategory(value as ProductCategory)} options={[{ value:"tv", label:"TV" }, { value:"monitor", label:"显示器" }]} />}
+            {page !== "B站操盘看板" && <BusinessSelect className="channel-business-select" label="当前渠道" value={effectiveChannel} onChange={(value) => setChannel(value as ChannelFilter)} options={category === "monitor" && (page === "总览" || page === "数据导入") ? [{ value:"jd", label:"京东" }] : [{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />}
             <div className="global-search">
               <Search size={17} />
               <input placeholder="搜索达人、团长或商品" />
@@ -257,11 +262,13 @@ export default function DashboardApp() {
           </div>
         </header>
         <section className="content">
-          {page === "总览" && (category === "tv" ? <RealOverview channel={channel} /> : <MonitorDashboard />)}
+          {page === "总览" && <RealOverview channel={effectiveChannel} category={category} />}
+          {page === "B站操盘看板" && <BilibiliDashboard category={category} />}
           {page === "达人/团长管理" && <ResourceManager channel={channel} />}
           {page === "数据导入" && (
             <ImportPage
-              channel={channel}
+              channel={effectiveChannel}
+              category={category}
               orders={orders}
               setOrders={setOrders}
               uploading={uploading}
@@ -277,9 +284,13 @@ export default function DashboardApp() {
   );
 }
 
-function MonitorDashboard() {
+function BilibiliDashboard({ category }: { category: ProductCategory }) {
+  if (category === "tv") return <div className="monitor-dashboard-shell bilibili-empty">
+    <div className="monitor-dashboard-head"><div><h2>TV · B站操盘看板</h2><p>TV与显示器数据源相互隔离</p></div><span>等待接入TV的B站数据源</span></div>
+    <div className="empty-category-state"><MonitorPlay size={44}/><h3>暂无TV品类的B站交接数据</h3><p>当前交接包只包含显示器数据；后续接入TV数据后将在这里按相同模式展示。</p></div>
+  </div>;
   return <div className="monitor-dashboard-shell">
-    <div className="monitor-dashboard-head"><div><h2>显示器 · CPS达人全链路操盘看板</h2><p>完整保留显示器原看板的数据口径、分析方式与下钻模式</p></div><span>数据截至 2026-08-13</span></div>
+    <div className="monitor-dashboard-head"><div><h2>显示器 · B站操盘看板</h2><p>完整保留显示器原看板的数据口径、分析方式与下钻模式</p></div><span>数据截至 2026-08-13</span></div>
     <iframe className="monitor-dashboard-frame" src="/monitor-dashboard/" title="显示器CPS达人全链路操盘看板" />
   </div>;
 }
@@ -674,12 +685,14 @@ function ProductPage() {
 
 function ImportPage({
   channel,
+  category,
   orders,
   setOrders,
   uploading,
   setUploading,
 }: {
   channel: ChannelFilter;
+  category: ProductCategory;
   orders: Order[];
   setOrders: (x: Order[]) => void;
   uploading: boolean;
@@ -699,10 +712,11 @@ function ImportPage({
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
+  useEffect(() => { setOrders([]); setFileName(""); setSaveMessage(""); }, [category, channel, setOrders]);
   async function loadJobs(nextChannel: ChannelFilter = channel) {
     setJobsLoading(true);
     try {
-      const response = await fetch(`/api/import-jobs?channel=${nextChannel}`);
+      const response = await fetch(`/api/import-jobs?channel=${nextChannel}&category=${category}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "读取导入历史失败");
       setJobs(result);
@@ -717,26 +731,26 @@ function ImportPage({
   }
   useEffect(() => {
     void loadJobs();
-  }, [channel]);
+  }, [channel, category]);
   useEffect(() => {
     if (channel !== "jd") { setPlanStatus(channel === "all" ? "请选择京东渠道" : "计划白名单仅用于京东"); return; }
-    fetch("/api/plan-whitelist?channel=jd").then(r=>r.json()).then(x=>setPlanStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传京东计划白名单")).catch(()=>setPlanStatus("计划白名单读取失败"));
-  }, [channel]);
+    fetch(`/api/plan-whitelist?channel=jd&category=${category}`).then(r=>r.json()).then(x=>setPlanStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传京东计划白名单")).catch(()=>setPlanStatus("计划白名单读取失败"));
+  }, [channel, category]);
   function downloadTemplate(kind: "plan" | "sku") {
     const rows = kind === "plan" ? [{ "计划名称": "示例：雷鸟团长计划" }] : [{ "SKU": "100000000000", "推广名": "示例型号", "型号": "可选", "计入电视销量": "是" }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), kind === "plan" ? "计划白名单" : "SKU商品映射"); XLSX.writeFile(wb, kind === "plan" ? "京东计划白名单模板.xlsx" : "SKU商品映射模板.xlsx");
   }
-  async function loadPlans(file: File) { try { const rows=await parseSpreadsheet(file); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
+  async function loadPlans(file: File) { try { const rows=await parseSpreadsheet(file); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",category,fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
   useEffect(() => {
     if (channel === "all") {
       setMappingStatus("请先选择渠道");
       return;
     }
-    fetch(`/api/product-mappings?channel=${channel}`)
+    fetch(`/api/product-mappings?channel=${channel}&category=${category}`)
       .then((r) => r.json())
       .then((x) => setMappingStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传商品匹配表"))
       .catch(() => setMappingStatus("匹配表状态读取失败"));
-  }, [channel]);
+  }, [channel, category]);
   const summary = useMemo(
     () => ({
       rows: orders.length,
@@ -781,7 +795,7 @@ function ImportPage({
         merchantCode: String(r["商品编码"] ?? "").trim(),
       })).filter((r) => r.promotionName && r.merchantCode);
       const response = await fetch("/api/product-mappings", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel, fileName: file.name, rows: mappings }) });
+        body: JSON.stringify({ channel, category, fileName: file.name, rows: mappings }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "匹配表上传失败");
       setMappingStatus(`当前：${file.name}（${result.rowCount}条），已覆盖旧匹配表`);
@@ -808,6 +822,7 @@ function ImportPage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             channel,
+            category,
             orders: orders.slice(i * batchSize, (i + 1) * batchSize),
             importJobId: jobId || undefined,
             fileName,
@@ -867,7 +882,8 @@ function ImportPage({
       title="数据导入"
       desc="上传订单文件，系统将自动校验、去重并更新看板"
     >
-      {channel === "jd" && <JdSyncCard />}
+      {channel === "jd" && category === "tv" && <JdSyncCard />}
+      {channel === "jd" && category === "monitor" && <div className="import-category-note">当前为“显示器 · 京东”数据空间，导入的数据、SKU映射和计划白名单均与TV完全隔离。</div>}
       {channel === "all" && (
         <div className="import-channel-empty">
           请先从页面右上角选择京东、抖音或天猫渠道，再管理对应渠道的数据与匹配规则。
@@ -922,9 +938,9 @@ function ImportPage({
         <>
           <div className="mini-kpis import-result">
             <Mini
-              label="目标渠道"
-              value={channelName(channel)}
-              note="本批数据固定渠道"
+              label="目标数据空间"
+              value={`${category === "tv" ? "TV" : "显示器"} · ${channelName(channel)}`}
+              note="本批数据按品类和渠道隔离"
             />
             <Mini
               label="识别订单"

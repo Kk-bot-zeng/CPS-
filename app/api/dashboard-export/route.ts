@@ -6,8 +6,10 @@ export async function GET(request: Request) {
   const auth = await requireApiUser(); if (auth.error) return auth.error;
   const url = new URL(request.url), start = url.searchParams.get("start"), end = url.searchParams.get("end");
   const channel = url.searchParams.get("channel") || "all", talent = url.searchParams.get("talent") || "all", model = url.searchParams.get("model") || "all";
+  const category = url.searchParams.get("category") || "tv";
   if (channel !== "all" && !isChannel(channel)) return new Response("Invalid channel", { status: 400 });
-  let q = auth.admin.from("orders").select("platform,order_no,paid_at,talent_name_raw,model_name,external_product_id,product_name_raw,quantity,payable_amount,order_status").eq("is_talent", true).order("paid_at");
+  if (category !== "tv" && category !== "monitor") return new Response("Invalid category", { status: 400 });
+  let q = auth.admin.from("orders").select("platform,order_no,paid_at,talent_name_raw,model_name,external_product_id,product_name_raw,quantity,payable_amount,order_status").eq("is_talent", true).eq("product_category", category).order("paid_at");
   if (start) q = q.gte("paid_at", `${start}T00:00:00`); if (end) q = q.lte("paid_at", `${end}T23:59:59`);
   if (channel !== "all") q = q.eq("platform", channel); if (talent !== "all") q = q.eq("talent_name_raw", talent); if (model !== "all") q = q.eq("model_name", model);
   const { data, error } = await q; if (error) return new Response(error.message, { status: 400 });

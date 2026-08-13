@@ -86,7 +86,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   else responseCache.clear();
   return j;
 }
-export function RealOverview({ channel }: { channel: ChannelFilter }) {
+export function RealOverview({ channel, category = "tv" }: { channel: ChannelFilter; category?: "tv" | "monitor" }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [talentOptions, setTalentOptions] = useState<{ value: string; label: string }[]>([]);
   const [modelOptions, setModelOptions] = useState<{ value: string; label: string }[]>([]);
@@ -126,27 +126,27 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
     try {
       setSummary(
         await jsonFetch(
-          `/api/dashboard?start=${start}&end=${end}&channel=${channel}&talent=${encodeURIComponent(talent)}&model=${encodeURIComponent(model)}`,
+          `/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=${encodeURIComponent(talent)}&model=${encodeURIComponent(model)}`,
         ),
       );
     } finally {
       setLoading(false);
     }
-  }, [start, end, channel, talent, model]);
+  }, [start, end, channel, category, talent, model]);
   const downloadFiltered = () => {
-    window.location.assign(`/api/dashboard-export?${new URLSearchParams({ start, end, channel, talent, model }).toString()}`);
+    window.location.assign(`/api/dashboard-export?${new URLSearchParams({ start, end, channel, category, talent, model }).toString()}`);
   };
   useEffect(() => {
     load();
   }, [load]);
   useEffect(() => {
-    jsonFetch<Summary>(`/api/dashboard?start=${start}&end=${end}&channel=${channel}&talent=all&model=all`)
+    jsonFetch<Summary>(`/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=all&model=all`)
       .then((data) => {
         setTalentOptions(data.talents.map((x) => ({ value: x.name, label: x.name })));
         setModelOptions(data.seriesProducts.map((x) => ({ value: x.name, label: x.name })));
       })
       .catch(() => {});
-  }, [start, end, channel]);
+  }, [start, end, channel, category]);
   if (loading) return <Loading />;
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
@@ -165,7 +165,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
       <div className="page-title">
         <div>
           <h2>
-            经营总览 · {channel === "all" ? "全部渠道" : channelName(channel)}
+            {category === "tv" ? "TV" : "显示器"}经营总览 · {channel === "all" ? "全部渠道" : channelName(channel)}
           </h2>
           <p>以下数据实时读取自Supabase订单库</p>
         </div>

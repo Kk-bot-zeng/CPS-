@@ -6,11 +6,15 @@ export async function GET(request: Request) {
   const auth = await requireApiUser();
   if (auth.error) return auth.error;
   const channel = new URL(request.url).searchParams.get("channel") || "all";
+  const category = new URL(request.url).searchParams.get("category") || "tv";
   if (channel !== "all" && !isChannel(channel))
     return NextResponse.json({ error: "无效渠道" }, { status: 400 });
+  if (category !== "tv" && category !== "monitor")
+    return NextResponse.json({ error: "无效品类" }, { status: 400 });
   let query = auth.admin
     .from("import_jobs")
-    .select("id,channel,file_name,status,total_rows,created_at,completed_at")
+    .select("id,channel,product_category,file_name,status,total_rows,created_at,completed_at")
+    .eq("product_category", category)
     .order("created_at", { ascending: false })
     .limit(200);
   if (channel !== "all") query = query.eq("channel", channel);

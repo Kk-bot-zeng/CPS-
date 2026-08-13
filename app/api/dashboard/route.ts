@@ -30,14 +30,18 @@ export async function GET(request: Request) {
   const start = url.searchParams.get("start");
   const end = url.searchParams.get("end");
   const channel = url.searchParams.get("channel") || "all";
+  const category = url.searchParams.get("category") || "tv";
   const talent = url.searchParams.get("talent") || "all";
   const model = url.searchParams.get("model") || "all";
   if (channel !== "all" && !isChannel(channel))
     return NextResponse.json({ error: "无效渠道" }, { status: 400 });
 
+  if (category !== "tv" && category !== "monitor")
+    return NextResponse.json({ error: "无效品类" }, { status: 400 });
+
   let query = auth.admin.from("orders")
       .select("order_no,payable_amount,quantity,order_status,talent_name_raw,model_name,product_name_raw,paid_at,is_talent")
-      .eq("is_talent", true).order("paid_at");
+      .eq("is_talent", true).eq("product_category", category).order("paid_at");
   if (start) query = query.gte("paid_at", `${start}T00:00:00`);
   if (end) query = query.lte("paid_at", `${end}T23:59:59`);
   if (channel !== "all") query = query.eq("platform", channel);
