@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CPS达人全链路操盘2.0 — 运营看板</title>
+<script src="/monitor-dashboard/echarts.min.js"></script>
+<style>
+:root {
+  --bg:#f5f7fb;--surface:#fff;--text:#172033;--muted:#667085;
+  --line:#e3e9f2;--blue:#2468d8;--green:#10b981;--orange:#f59d22;
+  --red:#ef4444;--purple:#8b5cf6;--dark:#1e293b;--header-bg:#0f172a;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+
+/* Header */
+.header{display:none}
+.header .brand{font-size:18px;font-weight:700;letter-spacing:.5px;white-space:nowrap}
+.header .subtitle{color:#94a3b8;font-size:12px;margin-left:8px}
+.header .controls{margin-left:auto;display:flex;gap:10px;align-items:center}
+.header .refresh-btn{background:var(--blue);border:none;color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:4px}
+.header .refresh-btn:hover{opacity:.85}
+.header .refresh-btn.loading{opacity:.6;pointer-events:none}
+.header .data-time{color:#94a3b8;font-size:11px}
+
+/* Main */
+.main{max-width:1520px;margin:0 auto;padding:12px 16px 40px}
+
+/* Top-level business module navigation */
+.module-nav{position:sticky;top:0;z-index:90;display:flex;align-items:center;gap:4px;margin:-12px -16px 18px;padding:10px 16px;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(29,55,90,.06);backdrop-filter:blur(10px)}
+.module-tab{min-width:112px;padding:9px 18px;border:1px solid transparent;border-radius:8px;background:transparent;color:#526075;font:600 14px/1.2 inherit;cursor:pointer;transition:background .18s,color .18s,border-color .18s}
+.module-tab:hover{background:#f4f7fc;color:var(--blue);border-color:#dbe6f7}
+.module-tab.active{background:#eaf2ff;color:var(--blue);border-color:#cfe0fb;box-shadow:0 1px 2px rgba(36,104,216,.08)}
+.module-intro{margin-bottom:14px;padding:0 2px}.module-intro h1{font-size:20px;color:var(--dark);margin-bottom:3px}.module-intro p{font-size:12px;color:var(--muted)}
+@media(max-width:640px){.module-nav{overflow-x:auto}.module-tab{min-width:96px;padding:9px 13px}.module-intro h1{font-size:17px}}
+
+/* Sections */
+.section{margin-bottom:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 10px rgba(35,55,80,.045);overflow:hidden}
+.section-header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.section-header h2{font-size:15px;font-weight:700;color:var(--dark)}
+
+/* ─── Date Filter Banner ─── */
+.filter-banner{background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:var(--radius);padding:12px 20px;display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.filter-banner .filter-label{font-size:12px;color:#1e40af;font-weight:700;white-space:nowrap}
+.filter-badge-group{display:flex;gap:4px;flex-wrap:wrap}
+.filter-badge{padding:4px 12px;border-radius:4px;border:1px solid #93c5fd;background:#fff;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text)}
+.filter-badge:hover{border-color:var(--blue);color:var(--blue)}
+.filter-badge.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.filter-custom-date{display:none;align-items:center;gap:6px}
+.filter-custom-date.show{display:flex}
+.filter-custom-date input{padding:4px 8px;border:1px solid #93c5fd;border-radius:4px;font-size:12px}
+.filter-custom-date button{padding:4px 10px;border:1px solid #93c5fd;background:#fff;border-radius:4px;cursor:pointer;font-size:11px}
+.date-range-info{margin-left:auto;font-size:12px;color:#1e40af;font-weight:600;white-space:nowrap}
+
+/* ─── KPI Cards ─── */
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line)}
+.kpi-card{background:var(--surface);padding:16px 18px;text-align:center;cursor:pointer;transition:background .15s}
+.kpi-card:hover{background:#f0f7ff}
+.kpi-card .kpi-label{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600}
+.kpi-card .kpi-value{font-size:28px;font-weight:800;color:var(--text);margin-bottom:4px}
+.kpi-card .kpi-unit{font-size:12px;color:var(--muted);font-weight:400}
+.kpi-card .kpi-sub{font-size:11px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);line-height:1.6}
+.kpi-card .kpi-ratio{font-size:16px;font-weight:700;margin-top:4px}
+.kpi-card .kpi-yoy{font-size:12px;font-weight:600;margin-top:4px}
+.yoy-up{color:var(--red)}.yoy-down{color:var(--green)}
+.kpi-card[data-key="store_traffic"] .kpi-value,.kpi-card[data-key="store_traffic"] .kpi-ratio{color:#7c3aed}
+
+/* ─── Today Overview ─── */
+.today-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:16px 20px}
+.today-block h3{font-size:13px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.today-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.today-metric-card{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.today-metric-card .label{font-size:11px;color:var(--muted)}
+.today-metric-card .desc{font-size:12px;margin-top:4px;line-height:1.6}
+.tasks-list{list-style:none}
+.tasks-list li{padding:10px 12px;border:1px solid var(--line);border-radius:6px;margin-bottom:8px;display:flex;align-items:flex-start;gap:8px;background:#f8fafc}
+.task-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.task-dot.high{background:var(--red)}.task-dot.medium{background:var(--orange)}.task-dot.low{background:var(--green)}
+.task-info .task-title{font-size:13px;font-weight:600}
+.task-info .task-desc{font-size:12px;color:var(--muted);margin-top:2px}
+.task-badge{font-size:10px;padding:2px 8px;border-radius:10px;flex-shrink:0;margin-left:auto}
+.task-badge.pending{background:#fef3c7;color:#92400e}.task-badge.done{background:#d1fae5;color:#065f46}
+
+/* ─── Content Analysis ─── */
+.content-top{display:grid;grid-template-columns:1fr;gap:16px;padding:16px 20px}
+.content-section-title{font-size:14px;font-weight:700;color:var(--dark);margin:12px 20px 8px;display:flex;align-items:center;gap:8px}
+.rank-table,.creator-detail-table,.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.rank-table th,.creator-detail-table th,.data-table th{font-size:11px;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:2px solid var(--line);background:#f8fafc;position:sticky;top:0;white-space:nowrap}
+.rank-table td,.creator-detail-table td,.data-table td{padding:7px 10px;border-bottom:1px solid var(--line)}
+.rank-table tr:last-child td,.creator-detail-table tr:last-child td,.data-table tr:last-child td{border-bottom:none}
+.rank-table tbody tr:hover,.creator-detail-table tbody tr:hover,.data-table tbody tr:hover{background:#f0f7ff}
+.rank-num{display:inline-flex;width:22px;height:22px;line-height:22px;text-align:center;border-radius:4px;font-size:11px;font-weight:700;color:#fff;background:var(--muted)}
+.rank-num.r1{background:#f59d22}.rank-num.r2{background:#94a3b8}.rank-num.r3{background:#cd7f32}
+.clickable-link{color:var(--blue);text-decoration:none;cursor:pointer;font-weight:500}
+.clickable-link:hover{text-decoration:underline}
+
+/* Brand highlight */
+.brand-row-hkc{background:#eff6ff !important;font-weight:600}
+
+/* Warning icon */
+.warning-icon{color:var(--orange);margin-left:4px;font-size:14px;cursor:help}
+
+/* AI Insight */
+.ai-insight{margin:0 20px 16px;padding:12px 16px;background:linear-gradient(90deg,#f0fdf4,#ecfdf5);border-left:3px solid var(--green);border-radius:0 6px 6px 0;font-size:12px;line-height:1.7}
+.ai-insight .ai-label{font-size:11px;color:var(--green);font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.ai-insight .ai-text{color:#374151;white-space:pre-wrap}
+.ai-refresh{font-size:10px;color:var(--blue);cursor:pointer;margin-left:auto;float:right}
+.ai-loading{color:var(--muted);font-style:italic}
+.ai-generate-btn{padding:5px 14px;border:1px solid var(--green);background:#fff;color:var(--green);border-radius:4px;cursor:pointer;font-size:11px;white-space:normal;float:none}
+.ai-generate-btn:hover{background:var(--green);color:#fff}
+
+/* Chart */
+.chart-wrap{padding:0 20px 16px}
+.chart-wrap .chart-container{height:280px;border:1px solid var(--line);border-radius:6px;background:#fff}
+
+/* ─── Content Detail Table (drill-down) ─── */
+.drilldown-section{margin:0 20px 20px;padding:12px 16px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:var(--radius)}
+.drilldown-section .drilldown-close{float:right;cursor:pointer;color:var(--muted);font-size:16px;border:none;background:none;padding:0 4px}
+.drilldown-section .drilldown-close:hover{color:var(--red)}
+.drilldown-title{font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px}
+.detail-scroll{overflow-x:auto;max-height:400px;overflow-y:auto;border:1px solid var(--line);border-radius:6px}
+
+/* ─── Creator Workbench ─── */
+.workbench-tabs{display:flex;gap:0;border-bottom:2px solid var(--line);margin:0}
+.workbench-tab{padding:10px 20px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);transition:all .15s}
+.workbench-tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.workbench-tab:hover:not(.active){color:var(--text)}
+.workbench-panel{display:none;padding:16px 20px}
+.workbench-panel.active{display:block}
+.invite-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.invite-toolbar button{padding:6px 14px;border:1px solid var(--line);background:#fff;border-radius:4px;cursor:pointer;font-size:12px}
+.invite-toolbar button:hover{border-color:var(--blue);color:var(--blue)}
+.invite-toolbar button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.invite-toolbar select{padding:6px 10px;border:1px solid var(--line);border-radius:4px;font-size:12px}
+.invite-toolbar .spacer{flex:1}
+.check-all{width:16px;height:16px;accent-color:var(--blue)}
+
+.stat-mini{flex:1;min-width:140px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:10px 14px}
+.stat-mini .stat-label{font-size:11px;color:var(--muted)}
+.stat-mini .stat-value{font-size:22px;font-weight:700;margin-top:2px}
+.stats-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+
+.table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+
+/* Status tags */
+.tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500}
+.tag-green{background:#d1fae5;color:#065f46}.tag-red{background:#fee2e2;color:#991b1b}
+.tag-orange{background:#fef3c7;color:#92400e}.tag-blue{background:#dbeafe;color:#1e40af}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+
+/* Loading overlay */
+.loading-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:999;display:none;align-items:center;justify-content:center}
+.loading-overlay.show{display:flex}
+.loading-box{background:#fff;padding:24px 36px;border-radius:12px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.15)}
+.loading-box .spinner-big{width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+.loading-box p{color:var(--muted);font-size:13px}
+
+/* ROI placeholder */
+.roi-placeholder{padding:20px;text-align:center;color:var(--muted);font-size:12px;border:2px dashed var(--line);border-radius:var(--radius);margin-top:10px}
+
+/* Footer */
+.footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--line)}
+
+/* Responsive */
+@media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.today-grid,.section.row-split{grid-template-columns:1fr}}
+@media(max-width:768px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.header{flex-wrap:wrap;height:auto;padding:10px 14px;gap:8px}.main{padding:10px}.filter-banner{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-box">
+    <div class="spinner-big"></div>
+    <p id="loadingText">正在加载数据...</p>
+  </div>
+</div>
+
+<header class="header">
+  <span class="brand">CPS达人全链路操盘2.0</span>
+  <span class="subtitle">| CPS达人运营看板</span>
+  <div class="controls">
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
+      <span id="refreshIcon">&#8635;</span><span id="refreshLabel">刷新</span>
+    </button>
+    <span class="data-time" id="dataTime"></span>
+  </div>
+</header>
+
+<main class="main" id="app"></main>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  kpiCards: [],
+  periodStart: '', periodEnd: '', selectedPeriod: '7',
+  dailyCurve: null, prevCurve: null,
+  topCreators: [], thunderbirdCreators: [], brandRankings: [],
+  actionPlan: {}, todayTasks: null,
+  aiAnalysis: '', aiFresh: '',
+  drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
+  activeModule: 'platform',
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const API = '/monitor-api';
+
+async function showLoading(text='加载中...'){ $('#loadingText').textContent=text; $('#loadingOverlay').classList.add('show'); }
+async function hideLoading(){ $('#loadingOverlay').classList.remove('show'); }
+
+async function apiGet(url){ const r=await fetch(API+url); if(!r.ok)throw new Error('HTTP '+r.status); return r.json(); }
+async function apiPost(url,body){ const r=await fetch(API+url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok)throw new Error('HTTP '+r.status); return r.json(); }
+
+function fmt(n){ n=Number(n)||0; if(n>=1e6)return(n/1e6).toFixed(1)+'M'; if(n>=1e4)return(n/1e4).toFixed(1)+'万'; return String(n); }
+function fmtY(n){ if(n==null||n===undefined)return'-'; return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+const PERIOD_LABELS={'today':'今天','yesterday':'昨天','7':`近${7}天`, '14':`近${14}天`, '30':`近${30}天`};
+
+function dateQuery(){
+  return state.periodStart&&state.periodEnd
+    ? `start_date=${encodeURIComponent(state.periodStart)}&end_date=${encodeURIComponent(state.periodEnd)}` : '';
+}
+
+// ─── Render App ───────────────────────────────────────────────────────────────
+function renderApp(){
+  const app=$('#app');
+  const moduleContent=state.activeModule==='platform'
+    ? `${renderModuleIntro('平台总览','查看平台整体内容、流量、蓝链与联盟转化表现')}${renderTodayOverview()}${renderKPISection()}`
+    : state.activeModule==='industry'
+      ? `${renderModuleIntro('行业分析','对比行业品牌的内容规模、播放表现与达人覆盖')}${renderContentAnalysis('industry')}`
+      : `${renderModuleIntro('达人工作台','管理达人建联、流失预警，并分析达人内容与转化效果')}${renderCreatorEffectChart()}${renderCreatorWorkbench()}${renderContentAnalysis('creator')}`;
+  app.innerHTML=`
+    ${renderModuleNav()}
+    ${renderFilterBanner()}
+    ${moduleContent}
+    ${renderFooter()}`;
+  initCharts();
+}
+
+function renderModuleNav(){
+  const tabs=[['platform','平台总览'],['industry','行业分析'],['creator','达人工作台']];
+  return `<nav class="module-nav" aria-label="B站操盘模块">${tabs.map(([key,label])=>`<button class="module-tab ${state.activeModule===key?'active':''}" onclick="switchDashboardModule('${key}')">${label}</button>`).join('')}</nav>`;
+}
+
+function renderModuleIntro(title,desc){
+  return `<div class="module-intro"><h1>${title}</h1><p>${desc}</p></div>`;
+}
+
+function switchDashboardModule(module){
+  state.activeModule=module;
+  state.drillFilter=null;
+  renderApp();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ─── A. Date Filter Banner ───────────────────────────────────────────────────
+function renderFilterBanner(){
+  const currentPeriod = state.selectedPeriod;
+  return `
+  <div class="filter-banner" id="filterBanner">
+    <span class="filter-label">&#128197; 全局日期筛选</span>
+    <div class="filter-badge-group">
+      <span class="filter-badge ${currentPeriod==='today'?'active':''}" onclick="setPeriod('today')">今天</span>
+      <span class="filter-badge ${currentPeriod==='yesterday'?'active':''}" onclick="setPeriod('yesterday')">昨天</span>
+      <span class="filter-badge ${currentPeriod==='7'?'active':''}" onclick="setPeriod('7')">近7天</span>
+      <span class="filter-badge ${currentPeriod==='14'?'active':''}" onclick="setPeriod('14')">近14天</span>
+      <span class="filter-badge ${currentPeriod==='30'?'active':''}" onclick="setPeriod('30')">近30天</span>
+      <span class="filter-badge ${currentPeriod==='custom'?'active':''}" onclick="toggleCustomDate()">自定义范围</span>
+    </div>
+    <div class="filter-custom-date ${currentPeriod==='custom'?'show':''}" id="customDateGroup">
+      <input type="date" id="startDateInput">
+      <span>至</span>
+      <input type="date" id="endDateInput">
+      <button onclick="applyCustomDate()">确认</button>
+    </div>
+    <span class="date-range-info" id="dateRangeInfo">${getDateRangeText()}</span>
+  </div>`;
+}
+
+function getDateRangeText(){
+  if(state.periodStart && state.periodEnd){
+    return `${state.periodStart} ~ ${state.periodEnd}`;
+  }
+  return PERIOD_LABELS[state.selectedPeriod]||'请选定日期范围';
+}
+
+function toggleCustomDate(){
+  const g=$('#customDateGroup');
+  if(g)g.classList.toggle('show');
+}
+
+async function setPeriod(p){
+  state.selectedPeriod=p;
+  state.drillFilter=null;
+  await loadDailyData(p);
+  renderApp();
+  updateFooter();
+}
+
+async function applyCustomDate(){
+  const s=$('#startDateInput'),e=$('#endDateInput');
+  if(s&&e&&s.value&&e.value){
+    state.selectedPeriod='custom';
+    state.periodStart=s.value;
+    state.periodEnd=e.value;
+    state.drillFilter=null;
+    // Compute the real inclusive day difference; do not silently rewrite it to 7 days.
+    const d1=new Date(s.value), d2=new Date(e.value);
+    const dayDiff=Math.ceil((d2-d1)/86400000)+1;
+    if(dayDiff<1){alert('结束日期不能早于开始日期');return;}
+    await loadDashboard(dayDiff,s.value,e.value);
+  }
+}
+
+// ─── B. Today Overview ────────────────────────────────────────────────────────
+function renderTodayOverview(){
+  let tasksHTML='';
+  if(state.todayTasks && state.todayTasks.items && state.todayTasks.items.length){
+    tasksHTML=state.todayTasks.items.map(i=>`
+      <li>
+        <span class="task-dot ${i.priority||'medium'}"></span>
+        <div class="task-info"><div class="task-title">${i.title}</div><div class="task-desc">${i.desc||''}</div></div>
+        <span class="task-badge ${i.status==='完成'?'done':'pending'}">${i.count>0?i.count+'个':'待更新'}</span>
+      </li>`).join('');
+  }else{
+    tasksHTML='<li style="text-align:center;color:var(--muted)">暂无今日待办</li>';
+  }
+
+  // Get curve data for metrics
+  const cp=state.dailyCurve||[];
+  const lastDay=cp[cp.length-1]||{};
+
+  return `
+  <section class="section">
+    <div class="section-header"><h2>一、今日概况</h2></div>
+    <div class="today-grid">
+      <div class="today-block">
+        <h3>&#128200; 变化概览</h3>
+        <div class="today-metrics">
+          <div class="today-metric-card">
+            <div class="label">1、内容变化</div>
+            <div class="desc">内容数 <strong>${fmt(lastDay.new_content||0)}</strong>条<br>较上期 ${calcChange(cp,'new_content')}</div>
+          </div>
+          <div class="today-metric-card">
+            <div class="label">2、蓝链变化</div>
+            <div class="desc">蓝链数 <strong>${fmt(lastDay.total_blue_link_count||0)}</strong>个<br>雷鸟闪电令 <strong>${fmt(lastDay.thunderbird_link_count||0)}</strong>个</div>
+          </div>
+          <div class="today-metric-card">
+            <div class="label">3、转化变化</div>
+            <div class="desc">订单 <strong>${fmt(lastDay.sales_quantity||0)}</strong>单<br>佣金 <strong>¥${fmtY(lastDay.commission_amount||0)}</strong></div>
+          </div>
+          <div class="today-metric-card">
+            <div class="label">4、流量变化</div>
+            <div class="desc">播放量 <strong>${fmt(lastDay.play_count||0)}</strong><br>较上期 ${calcChange(cp,'play_count')}</div>
+          </div>
+        </div>
+      </div>
+      <div class="today-block">
+        <h3>&#128203; 今日待办</h3>
+        <ul class="tasks-list">${tasksHTML}</ul>
+      </div>
+    </div>
+  </section>`;
+}
+
+function calcChange(cp,key){
+  if(!cp||cp.length<2)return'无对比数据';
+  const cur=cp[cp.length-1][key]||0;
+  const prev=cp[cp.length-2][key]||0;
+  if(prev===0)return cur>0?'新数据':'无变化';
+  const pct=((cur-prev)/prev*100).toFixed(1);
+  return pct>=0? `<span style="color:var(--red)">+${pct}%</span>`:`<span style="color:var(--green)">${pct}%</span>`;
+}
+
+// ─── C. KPI Cards Section ─────────────────────────────────────────────────────
+function renderKPISection(){
+  const cards=state.kpiCards||[];
+  if(!cards.length)return '';
+  return `
+  <section class="section">
+    <div class="section-header"><h2>二、核心指标总览（点击下钻→内容明细）</h2></div>
+    <div class="kpi-grid">
+      ${cards.map((card,i)=>{
+        const isUp=card.yoy_direction==='↑';
+        const yoyColor=isUp?'yoy-up':'yoy-down';
+        const yoySymbol=isUp?'↑':'↓';
+        const subMap={content_count:'雷鸟品牌内容数/行业内容数',link_count:'雷鸟品牌蓝链数/全部蓝链数',store_traffic:'京准通搜索+站外流量/全站流量',jd_orders:'京东联盟订单数/全店订单数',jd_amount:'京东联盟订单金额/全店订单金额'};
+        // Backward compatible with an already-running older backend, whose
+        // cards have values but do not yet expose data_status.
+        const drillable=card.data_status==='ready'||(card.data_status==null&&card.current_value!=null);
+        const ready=drillable;
+        return `
+      <div class="kpi-card" data-key="${card.key||''}" ${drillable?`onclick="drillToContent('scope','${card.detail_scope||'all'}')"`:''} title="${drillable?'点击查看相关内容明细':card.data_message||'数据待补充'}">
+        <div class="kpi-label">${card.label}</div>
+        <div class="kpi-value">${ready?fmt(card.current_value):'待补充'} <span class="kpi-unit">${ready?(card.unit||''):''}</span></div>
+        <div class="kpi-sub">${card.metric_note||subMap[card.key]||card.sub_label||''}<br>
+          ${ready?'行业/全量: '+fmt(card.total_value):(card.data_message||'')}
+        </div>
+        <div class="kpi-ratio" style="color:var(--blue)">${card.ratio==null?'-':fmt(card.ratio)+'%'}</div>
+        <div class="kpi-yoy ${yoyColor}">${card.ratio==null?'':`${yoySymbol} 较前一等长周期 ${fmt(Math.abs(card.yoy_change_pct||0))}%${card.prev_ratio!=null?'&nbsp;| 上期 '+fmt(card.prev_ratio)+'%':''}`}</div>
+      </div>`;}).join('')}
+    </div>
+  </section>`;
+}
+
+// ─── Drilled Down Content Detail Table ────────────────────────────────────────
+function renderDrillDown(){
+  if(!state.drillFilter)return '';
+  const f=state.drillFilter;
+  const title=f.type==='brand'?`"${f.value}"品牌内容明细`:f.type==='scope'?'雷鸟品牌内容明细':f.type==='date'?`${f.value} 内容明细`:`"${f.value}"达人内容明细`;
+  return `
+  <div class="drilldown-section" id="drilldownSection">
+    <button class="drilldown-close" onclick="clearDrillDown()">&#10005; 关闭</button>
+    <div class="drilldown-title">&#128270; ${title}</div>
+    <div id="drilldownContent"><span style="color:var(--muted);font-size:12px;">加载中...</span></div>
+  </div>`;
+}
+
+function drillToContent(paramKey,paramVal){
+  let value=paramVal;
+  try{value=decodeURIComponent(paramVal)}catch(e){}
+  state.drillFilter={type:paramKey,value};
+  renderApp();
+  loadDrilldownData(paramKey,paramVal);
+  setTimeout(()=>{const el=$('#drilldownSection');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})},100);
+}
+
+function clearDrillDown(){
+  state.drillFilter=null;
+  renderApp();
+}
+
+async function loadDrilldownData(key,val){
+  const container=$('#drilldownContent');
+  if(!container)return;
+  try{
+    const query=dateQuery();
+    const common=query?`&${query}`:'';
+    // The rankings can contain hundreds/thousands of matching records.  The
+    // previous 100/200-row cap looked like missing content to the user.
+    const limit=5000;
+    const detailParam=key==='scope'?`scope=${encodeURIComponent(val)}`:key==='date'?`date=${encodeURIComponent(val)}`:`${key}=${encodeURIComponent(val)}`;
+    const url=`/content-detail?${detailParam}&limit=${limit}${common}`;
+    const data=await apiGet(url);
+    if(!data||!data.length){container.innerHTML='<p style="color:var(--muted);padding:10px">暂无内容数据</p>';return;}
+      // Collect clickable links during map iteration
+    let brandLinkHtml='';
+    const rows=data.slice(0,100).map((d,i)=>{
+      const creatorLink=d.creator_name?`<a class="clickable-link" onclick="event.stopPropagation();drillToContent('creator_name','${encodeURIComponent(d.creator_name)}')">${d.creator_name}</a>`:('-');
+      const detailLink=d.url?`<a class="clickable-link" href="${d.url}" target="_blank" rel="noopener">${d.title||'查看原视频'} &#8599;</a>`:(d.title||'-');
+      if(detailLink)brandLinkHtml=detailLink;
+      return `<tr>
+        <td>${i+1}</td>
+        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${d.title||''}">${detailLink}</td>
+        <td>${creatorLink}</td>
+        <td class="num">${fmt(d.play_count)}</td>
+        <td class="num">${fmt(d.interaction_count)}</td>
+        <td class="num">${fmt(d.blue_link_count)}</td>
+        <td class="num">${fmt(d.thunderbird_link_count)}</td>
+        <td>${d.date||'-'}</td>
+      </tr>`;}).join('');
+    container.innerHTML=`<div class="detail-scroll"><table class="creator-detail-table">
+          <thead><tr><th>#</th><th>标题</th><th>创作者</th><th class="num">播放</th><th class="num">互动</th>
+            <th class="num">蓝链</th><th class="num">闪电令</th><th>日期</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">共 ${data.length} 条记录，${brandLinkHtml||'无外部链接'}</p>`;
+  }catch(err){
+    container.innerHTML=`<p style="color:var(--red);padding:10px">加载失败: ${err.message}</p>`;
+  }
+}
+
+// ─── D. Content Analysis ──────────────────────────────────────────────────────
+function renderContentAnalysis(mode='industry'){
+  const brands=state.brandRankings||[];
+  const creators=state.topCreators||[];
+  const thunderbirdCreators=state.thunderbirdCreators||[];
+  let brandHTML='',creatorHTML='',allCreatorHTML='',roiHTML='';
+
+  // Brand Rankings Table
+  if(brands.length){
+    brandHTML=`
+      <table class="rank-table">
+        <thead><tr><th>排名</th><th>品牌</th><th class="num">内容数</th><th class="num">播放</th><th class="num">蓝链数</th><th class="num">达人数量</th></tr></thead>
+        <tbody>${brands.map((b,i)=>`
+          <tr class="${b.brand_name==='HKC'||b.brand_name==='雷鸟'?'brand-row-hkc':''}">
+            <td><span class="rank-num ${i<3?'r'+(i+1):''}">${i+1}</span></td>
+            <td><a class="clickable-link" data-brand="${encodeURIComponent(b.brand_name)}" onclick="drillToContent('brand',this.dataset.brand)">${b.brand_name}${b.brand_name==='HKC'||b.brand_name==='雷鸟'?' &#9733;':''}</a></td>
+            <td class="num">${fmt(b.content_count)}</td>
+            <td class="num">${fmt(b.play_count)}</td>
+            <td class="num">${fmt(b.link_count)}</td>
+            <td class="num">${fmt(b.creator_count)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }else{brandHTML='<p style="color:var(--muted);font-size:12px;padding:10px">品牌数据加载中...</p>';}
+
+  // Top 10 Creators
+  if(creators.length){
+    creatorHTML=`
+      <table class="creator-detail-table">
+          <thead><tr><th>#</th><th>达人名字</th><th class="num">内容数</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th class="num">雷鸟转化</th></tr></thead>
+        <tbody>${creators.map((c,i)=>`
+          <tr>
+            <td>${i+1}</td>
+            <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</a>${hasDecline(c)?'<span class="warning-icon" title="趋势下降">&#9888;</span>':''}</td>
+            <td class="num">${fmt(c.content_count)}</td>
+            <td class="num">${fmt(c.play_count)}</td>
+            <td class="num">${fmt(c.interaction_count)}</td>
+            <td class="num">${fmt(c.blue_link_count)}</td>
+            <td class="num">${fmt(c.thunderbird_link_count)}</td>
+            <td class="num">${c.thunderbird_conversion==null?'-':fmt(c.thunderbird_conversion)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // All relevant creators (本品内容分析)
+  const hasWarning=c=>!!hasDecline(c);
+  if(thunderbirdCreators.length){
+    allCreatorHTML=`
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>达人昵称</th><th class="num">内容数</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th class="num">雷鸟转化</th></tr></thead>
+          <tbody>${thunderbirdCreators.map((c,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</a></td>
+              <td class="num">${fmt(c.content_count)}</td>
+              <td class="num">${fmt(c.play_count)}</td>
+              <td class="num">${fmt(c.interaction_count)}</td>
+              <td class="num">${fmt(c.blue_link_count)}</td>
+              <td class="num">${fmt(c.thunderbird_link_count)}</td>
+              <td class="num">${c.thunderbird_conversion==null?'-':fmt(c.thunderbird_conversion)}</td>
+            </tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">所选周期暂无雷鸟蓝链达人</td></tr>'}
+        </tbody>
+        </table>
+      </div>`;
+  }
+
+  // AI Analysis button and text
+  const aiText=state.aiAnalysis||'[未生成AI分析]';
+  const aiFresh=state.aiFresh?` | 生成时间: ${state.aiFresh}`:'';
+
+  // ROI placeholder
+  roiHTML=`
+    <div class="roi-placeholder">
+      <h4 style="margin-bottom:8px;color:var(--dark)">&#128200; 投放ROI分析</h4>
+      <p>导入达人投放费用明细，追踪30天/60天/90天投后数据</p>
+      <p style="margin-top:4px">追踪指标: 内容数 &gt; 播放 &gt; 互动 &gt; 蓝链 &gt; 转化</p>
+      <p style="color:var(--muted);font-style:italic;margin-top:8px">功能开发中...支持AI推荐引擎和自动化ROI计算</p>
+    </div>`;
+
+  if(mode==='industry') return `
+  <section class="section">
+    <div class="section-header"><h2>行业品牌内容分析</h2></div>
+
+    <!-- 品牌排名 -->
+    <div class="content-section-title">&#127942; 品牌排名 <span style="font-size:11px;color:var(--muted);font-weight:400">(点击品牌名→查看内容清单)</span></div>
+    <div style="padding:0 20px 16px">${brandHTML}</div>
+
+    <!-- All brand/creator/date drill-downs live here, immediately above Top10. -->
+    ${renderDrillDown()}
+  </section>`;
+
+  return `
+  <section class="section">
+    <div class="section-header"><h2>达人内容与效果分析</h2></div>
+
+    ${renderDrillDown()}
+
+    <!-- Top10达人 -->
+    <div class="content-section-title">&#127942; 内容Top10达人 <span style="font-size:11px;color:var(--muted);font-weight:400">(点击达人名→查看具体笔记，&#9888;表示趋势下降)</span></div>
+    <div style="padding:0 20px 16px">${creatorHTML}</div>
+
+    <!-- 本品内容分析 -->
+    <div class="content-section-title">&#128202; 本品内容分析 <span style="font-size:11px;color:var(--muted);font-weight:400">(有下降预警的达人已标注)</span></div>
+    <div style="padding:0 20px 16px">${allCreatorHTML}</div>
+
+    <!-- AI一句话分析 -->
+    <div class="ai-insight">
+      <div class="ai-label">
+        &#128161; AI一句话分析${aiFresh}
+        <button class="ai-generate-btn" onclick="generateAI('analysis')">&lt;&lt; 生成AI分析</button>
+        <span class="ai-refresh" onclick="generateAI('analysis')">重新生成 &#8635;</span>
+      </div>
+      <div class="ai-text" id="aiAnalysisText">${aiText}</div>
+    </div>
+
+  </section>`;
+}
+
+function renderCreatorEffectChart(){
+  return `<section class="section creator-effect-section">
+    <div class="section-header"><h2>内容效果分析</h2></div>
+    <div class="chart-wrap" style="padding-top:16px"><div class="chart-container" id="curveChart"></div></div>
+  </section>`;
+}
+
+function hasDecline(c){
+  // Check if creator shows declining indicators
+  if(c.trend&&c.trend.includes('下降'))return true;
+  return false;
+}
+
+// ─── E. Creator Analytics Workbench ───────────────────────────────────────────
+function renderCreatorWorkbench(){
+  const plan=state.actionPlan||{};
+  const counts=plan.counts||{};
+  const pending=(plan['待建联']||[]);
+  const churn=(plan['流失预警']||[]);
+  const highVal=(plan['高价值基本盘']||[]);
+  const policy=(plan['政策倾斜建议']||[]);
+
+  const inviteCount=counts['待建联']||pending.length;
+  const churnCount=counts['流失预警']||churn.length;
+  const hvCount=counts['高价值基本盘']||highVal.length;
+  const polCount=counts['政策倾斜建议']||policy.length;
+
+  // Pending Invitation Table
+  const inviteRows=pending.map((d,i)=>`
+    <tr>
+      <td><input type="checkbox" class="item-check" checked></td>
+      <td>${i+1}</td>
+      <td>${d.recommended_action||'优先建联'}</td>
+      <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(d.creator_name||d.name||'')}')">${d.creator_name||d.name||d.creator_or_pin||('达人'+(i+1))}</a></td>
+      <td style="font-size:11px;color:var(--muted)">${d.reason||d.recommended_action||'-'}</td>
+    </tr>`).join('');
+
+  // Churn Warning Table
+  const churnRows=churn.map((d,i)=>{
+    const prevN=Number(d.previous_sales||d.previous_commission||0);
+    const curN=Number(d.current_sales||d.current_commission||0);
+    const delta=curN-prevN;
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${d.creator_or_pin||d.creator_name||'达人'}</td>
+      <td class="num">${prevN}</td>
+      <td class="num">${curN}</td>
+      <td class="num" style="color:${delta>=0?'var(--green)':'var(--red)'}">${delta>=0?'+':''}${delta}</td>
+      <td><span class="tag tag-red">&#9888; 预警</span></td>
+      <td style="font-size:11px">${d.recommended_action||'定向触达/调整政策'}</td>
+    </tr>`;
+  });
+
+  // High Value Table
+  const hvRows=highVal.map((d,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td>${d.creator_name||d.creator_or_pin||('达人'+(i+1))}</td>
+      <td style="font-size:11px;color:var(--muted)">${d.reason||'持续产出优质内容'}</td>
+      <td><span class="tag ${isHighRisk(d)?'tag-red':'tag-green'}">${isHighRisk(d)?'高风险':'优质达人'}</span></td>
+      <td style="font-size:11px;color:var(--green)">${d.recommended_action||'持续维护'}</td>
+    </tr>`);
+
+  // Policy Table
+  const polRows=policy.map((d,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td>${d.creator_name||d.creator_or_pin||('达人'+(i+1))}</td>
+      <td style="font-size:11px;color:var(--muted)">${d.reason||'-'}</td>
+      <td style="font-size:11px;color:var(--purple)">${d.recommended_action||'评估ROI后倾斜'}</td>
+    </tr>`);
+
+  return `
+  <section class="section">
+    <div class="section-header"><h2>达人工作台</h2></div>
+
+    <!-- Stats mini-cards -->
+    <div class="stats-row" style="padding:16px 20px 0">
+      <div class="stat-mini"><div class="stat-label">待建联达人</div><div class="stat-value" style="color:var(--blue)">${inviteCount}</div></div>
+      <div class="stat-mini"><div class="stat-label">流失预警</div><div class="stat-value" style="color:var(--red)">${churnCount}</div></div>
+      <div class="stat-mini"><div class="stat-label">高价值基本盘</div><div class="stat-value" style="color:var(--green)">${hvCount}</div></div>
+      <div class="stat-mini"><div class="stat-label">政策倾斜建议</div><div class="stat-value" style="color:var(--purple)">${polCount}</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="workbench-tabs">
+      <div class="workbench-tab active" onclick="switchWBTab(this,'tabInvite')">&#128203; 达人建联工作台</div>
+      <div class="workbench-tab" onclick="switchWBTab(this,'tabChurn')">&#9888;&#65039; 流失预警</div>
+      <div class="workbench-tab" onclick="switchWBTab(this,'tabHighValue')">&#128142; 高价值基本盘</div>
+      <div class="workbench-tab" onclick="switchWBTab(this,'tabRoi')">&#128200; 投放ROI分析</div>
+    </div>
+
+    <!-- Tab 1: 待建联 -->
+    <div class="workbench-panel active" id="tabInvite">
+      <div class="invite-toolbar">
+        <input type="checkbox" class="check-all" checked onchange="toggleCheckAll(this)"> 全选
+        <button class="primary" onclick="autoGenerateText()">&#129302; 自动生成话术</button>
+        <button onclick="sendInvites()">&#128220; 一键建联</button>
+        <div class="spacer"></div>
+        <span style="font-size:11px;color:var(--muted)">共 ${inviteCount} 位待建联达人</span>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th style="width:30px"></th><th>序号</th><th>推荐原因</th><th>达人昵称</th><th>推荐理由</th></tr></thead>
+          <tbody>${inviteRows||'<tr><td colspan="5" style="text-align:center;color:var(--muted)">暂无待建联达人</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 2: 流失预警 -->
+    <div class="workbench-panel" id="tabChurn">
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>达人/PIN</th><th>上月数据</th><th>本月数据</th><th>变化</th><th>状态</th><th>建议动作</th></tr></thead>
+          <tbody>${churnRows||'<tr><td colspan="7" style="text-align:center;color:var(--muted)">暂无流失预警达人</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 3: 高价值基本盘 -->
+    <div class="workbench-panel" id="tabHighValue">
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>达人</th><th>推荐理由</th><th>质量标签</th><th>建议动作</th></tr></thead>
+          <tbody>${hvRows||'<tr><td colspan="5" style="text-align:center;color:var(--muted)">暂无高价值达人数据</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 4: 投放ROI分析 -->
+    <div class="workbench-panel" id="tabRoi">
+      <div class="invite-toolbar">
+        <button onclick="importInvestmentData()">&#128196; 导入费用明细</button>
+        <select id="roiPeriodSelect"><option value="30">30天</option><option value="60">60天</option><option value="90">90天</option></select>
+        <span style="font-size:11px;color:var(--muted)">投后追踪周期</span>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>达人</th><th class="num">投放费用</th><th class="num">内容数</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">转化</th><th class="num">ROI</th></tr></thead>
+          <tbody><tr><td colspan="9" style="text-align:center;color:var(--muted)">请先导入达人投放费用明细</td></tr></tbody>
+        </table>
+      </div>
+      <div class="roi-placeholder">
+        <h4 style="margin-bottom:8px;color:var(--dark)">&#129302; AI推荐引擎</h4>
+        <p>基于历史ROI数据，智能推荐最优达人组合与投放策略</p>
+        <p style="color:var(--muted);font-style:italic;margin-top:8px">功能开发中...支持自动化计算与策略建议</p>
+      </div>
+    </div>
+  </section>`;
+}
+
+function isHighRisk(d){
+  return !!(d.risk_level&&d.risk_level.toLowerCase().includes('high'));
+}
+
+// ─── F. Footer ────────────────────────────────────────────────────────────────
+function renderFooter(){
+  return `
+  <footer class="footer">
+    <span id="footerText">数据更新时间: 加载中...</span>
+  </footer>`;
+}
+
+// ─── Tab Switching ────────────────────────────────────────────────────────────
+function switchWBTab(el,tabId){
+  $$('.workbench-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  $$('.workbench-panel').forEach(p=>p.classList.remove('active'));
+  $(`#${tabId}`).classList.add('active');
+}
+
+function toggleCheckAll(master){
+  $$('.item-check').forEach(cb=>cb.checked=master.checked);
+}
+
+// ─── Charts ───────────────────────────────────────────────────────────────────
+let curveChartInstance=null;
+
+function initCharts(){
+  const el=$('#curveChart');
+  if(!el)return;
+  if(curveChartInstance){curveChartInstance.dispose();}
+  curveChartInstance=echarts.init(el);
+
+  const cp=state.dailyCurve||[];
+  const pp=state.prevCurve||[];
+  const labels=cp.map(d=>d.date||'');
+
+  // Current period data
+  const newContent=cp.map(d=>d.thunderbird_linked_content_count||0);
+  const blueLinks=cp.map(d=>d.total_blue_link_count||0);
+  const commission=cp.map(d=>d.commission_amount||0);
+
+  // Previous period data (dashed lines)
+  const newContentPrev=pp.map(d=>d.thunderbird_linked_content_count||0);
+  const blueLinksPrev=pp.map(d=>d.total_blue_link_count||0);
+
+  const option={
+    tooltip:{
+      trigger:'axis',
+      backgroundColor:'#fff',
+      borderColor:'#e5e7eb',
+      textStyle:{fontSize:12},
+      formatter:function(params){
+        if(!params||!params.length)return'';
+        const idx=params[0].dataIndex;
+        const item=cp[idx]||{};
+        let html=`<div style="font-weight:700;margin-bottom:4px">${item.date||labels[idx]}</div>`;
+        html+=`雷鸟内容: <b>${item.thunderbird_linked_content_count||0}</b><br>`;
+        html+=`蓝链数: <b>${item.total_blue_link_count||0}</b><br>`;
+        html+=`雷鸟闪电令: <b>${item.thunderbird_link_count||0}</b><br>`;
+        html+=`联盟佣金（非GMV）: <b>¥${fmtY(item.commission_amount)}</b>`;
+        return html;
+      }
+    },
+    legend:{data:['雷鸟内容(本期)','雷鸟内容(上期)','蓝链数(本期)','雷鸟蓝链数','联盟佣金（非GMV）'],bottom:4,textStyle:{fontSize:11}},
+    grid:{top:40,bottom:30,left:50,right:70},
+    xAxis:{type:'category',data:labels,axisLine:{lineStyle:{color:'#e5e7eb'}}},
+    yAxis:[
+      {type:'value',name:'数量',axisLine:{show:false},splitLine:{lineStyle:{type:'dashed'}}},
+      {type:'value',name:'金额(元)',axisLine:{show:false},splitLine:{show:false}},
+    ],
+    series:[
+      {name:'雷鸟内容(本期)',type:'bar',data:newContent,itemStyle:{color:'#2563eb',borderRadius:[3,3,0,0]},barWidth:14},
+      {name:'雷鸟内容(上期)',type:'line',data:newContentPrev,smooth:true,symbol:'none',lineStyle:{type:'dashed',color:'#93c5fd'},yAxisIndex:0},
+      {name:'蓝链数(本期)',type:'line',data:blueLinks,smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#8b5cf6',width:2}},
+      {name:'雷鸟闪电令',type:'line',data:cp.map(d=>d.thunderbird_link_count||0),smooth:true,symbol:'diamond',symbolSize:5,lineStyle:{color:'#06b6d4',width:2}},
+      {name:'联盟佣金（非GMV）',type:'line',data:commission,smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#f59d22',width:2},yAxisIndex:1},
+    ],
+  };
+  // NOTE: 预留店铺流量曲线位 (shop traffic line to be added when data available)
+  curveChartInstance.setOption(option);
+  window.addEventListener('resize',()=>curveChartInstance&&curveChartInstance.resize());
+  // Chart point click → drill into that date's content
+  curveChartInstance.on('click',(params)=>{
+    if(!params||params.dataIndex==null)return;
+    const item=cp[params.dataIndex];
+    if(!item||!item.date)return;
+    state.drillFilter={type:'date',value:item.date,dateKey:item.date};
+    renderApp();
+    // Load content for that date via daily detail
+    loadDrilldownData('date',item.date);
+    setTimeout(()=>{const el=$('#drilldownSection');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})},100);
+  });
+}
+
+// ─── Data Loading ─────────────────────────────────────────────────────────────
+async function loadDailyData(period){
+  const days=(period==='today'||period==='yesterday')?1:(parseInt(period)||7);
+  state.periodStart='';state.periodEnd='';
+  await loadDashboard(days);
+}
+
+async function loadDashboard(days,startDate='',endDate=''){
+  showLoading('正在加载所选周期数据...');
+  try{
+    const explicit=startDate&&endDate?`&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`:'';
+    const kpis=await apiGet(`/kpi-cards?period_select=${days}${explicit}`);
+    if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;}
+    const q=dateQuery();
+    const suffix=q?`?${q}`:'';
+    const join=q?`&${q}`:'';
+    const [daily,tasks,creators,thunderbirdCreators,brands,plan]=await Promise.all([
+      apiGet(`/daily-with-period?days=${days}${join}`),
+      apiGet('/today-tasks'),
+      apiGet(`/top-creators?limit=10${join}`),
+      apiGet(`/top-creators?limit=50&scope=thunderbird${join}`),
+      apiGet(`/brand-rankings?limit=20${join}`),
+      apiGet('/action-plan')
+    ]);
+    mergeState(kpis,null,null,daily,tasks,creators,brands,plan,thunderbirdCreators);
+  }catch(err){console.error(err);alert(`数据加载失败：${err.message}`);}
+  finally{hideLoading();}
+  renderApp();
+  updateFooter();
+}
+
+function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan,thunderbirdCreators){
+  if(kpis&&kpis.cards)state.kpiCards=kpis.cards;
+  if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;}
+  if(daily&&daily.current_period)state.dailyCurve=daily.current_period;
+  if(daily&&daily.previous_period)state.prevCurve=daily.previous_period;
+  if(tasks)state.todayTasks=tasks;
+  if(creators)state.topCreators=creators;
+  if(thunderbirdCreators)state.thunderbirdCreators=thunderbirdCreators;
+  if(brands)state.brandRankings=brands;
+  if(plan)state.actionPlan=plan;
+}
+
+async function refreshAll(){
+  const btn=$('#refreshBtn'),icon=$('#refreshIcon'),label=$('#refreshLabel');
+  btn.classList.add('loading');icon.innerHTML='<span class="spinner"></span>';label.textContent='刷新中...';
+  try{await loadDailyData(state.selectedPeriod);label.textContent='已更新';setTimeout(()=>{label.textContent='刷新';},2000);}
+  catch(e){console.error(e);label.textContent='刷新失败';setTimeout(()=>{label.textContent='刷新';},3000);}
+  finally{btn.classList.remove('loading');}
+}
+
+// ─── AI Generation ────────────────────────────────────────────────────────────
+async function generateAI(type){
+  const textEl=$('#aiAnalysisText');
+  if(!textEl)return;
+  const origText=textEl.textContent;
+  textEl.innerHTML='<span class="ai-loading">&#9203; AI正在生成分析文案，请稍候...</span>';
+  try{
+    const context={
+      period:state.periodStart&&state.periodEnd?`${state.periodStart}至${state.periodEnd}`:(`近${state.selectedPeriod}天`),
+      kpi_cards:state.kpiCards,
+      daily_curve:state.dailyCurve,
+      top_creators:state.topCreators.slice(0,5),
+      action_plan_summary:state.actionPlan,
+    };
+    const result=await apiPost('/ai-generate',{type:'ai_today_analysis',period_select:state.selectedPeriod,context:context});
+    if(result&&result.text){
+      state.aiAnalysis=result.text;
+      state.aiFresh=new Date().toLocaleString('zh-CN');
+      textEl.textContent=result.text;
+      try{localStorage.setItem('cps_dashboard_ai_'+state.selectedPeriod,JSON.stringify({text:result.text,fresh:state.aiFresh}));}catch(e){}
+    }else{
+      textEl.textContent='[生成失败，请重试]';
+    }
+  }catch(err){
+    textEl.textContent=`[生成失败: ${err.message}]`;
+  }
+}
+
+function autoGenerateText(){
+  alert('自动生成话术功能：即将接入AI模型为每位待建联达人生成个性化建联话术。当前为UI演示。');
+}
+
+function sendInvites(){
+  const checked=$$('.item-check:checked');
+  alert(`一键建联：已选择 ${checked.length} 位达人\n注意：此功能仅为UI演示，实际发送需对接飞书消息API。`);
+}
+
+function importInvestmentData(){
+  alert('导入功能：请上传Excel格式的达人投放费用明细表。\n包含字段：达人名称、投放日期、费用金额、合作形式等。');
+}
+
+function updateFooter(){
+  const ft=$('#footerText');
+  if(ft){
+    const now=new Date().toLocaleString('zh-CN');
+    const info=state.periodStart?`数据周期: ${state.periodStart} ~ ${state.periodEnd} | `:`数据周期: ${PERIOD_LABELS[state.selectedPeriod]||''} | `;
+    ft.textContent=`${info}页面最后加载: ${now} | CPS达人全链路操盘2.0 v2.0`;
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{loadDailyData('7');});
+</script>
+</body>
+</html>
