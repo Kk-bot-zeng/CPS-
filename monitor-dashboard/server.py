@@ -3,6 +3,7 @@
 import asyncio
 import csv
 import json
+import math
 import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -534,6 +535,56 @@ class DataLoader:
 
         return {"current_period": clean(current), "previous_period": clean(previous)}
 
+    @staticmethod
+    def _correlation(rows: list[dict], left: str, right: str) -> Optional[float]:
+        pairs = [(_num(row.get(left)), _num(row.get(right))) for row in rows]
+        if len(pairs) < 3:
+            return None
+        xs, ys = zip(*pairs)
+        mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+        numerator = sum((x - mx) * (y - my) for x, y in pairs)
+        dx = math.sqrt(sum((x - mx) ** 2 for x in xs))
+        dy = math.sqrt(sum((y - my) ** 2 for y in ys))
+        return round(numerator / (dx * dy), 3) if dx and dy else None
+
+    def get_auto_analysis(self, start_date: Optional[str] = None,
+                          end_date: Optional[str] = None, days: int = 7) -> dict:
+        start, end = self._resolve_period(start_date, end_date, days)
+        current, previous = self._daily_periods(days, start.isoformat(), end.isoformat())
+        metric_keys = {"content": "new_content", "play": "play_count", "blue_link": "total_blue_link_count",
+                       "traffic": "total_visitors", "orders": "sales_quantity", "commission": "commission_amount"}
+        totals = {name: self._sum(current, key) for name, key in metric_keys.items()}
+        previous_totals = {name: self._sum(previous, key) for name, key in metric_keys.items()}
+        changes = {name: (round((value - previous_totals[name]) / abs(previous_totals[name]) * 100, 2)
+                          if previous_totals[name] else None) for name, value in totals.items()}
+        pairs = [("内容数与播放量", "new_content", "play_count"),
+                 ("播放量与蓝链数", "play_count", "total_blue_link_count"),
+                 ("蓝链数与联盟订单", "total_blue_link_count", "sales_quantity"),
+                 ("店铺流量与联盟订单", "total_visitors", "sales_quantity"),
+                 ("联盟订单与联盟佣金", "sales_quantity", "commission_amount")]
+        correlations = [{"label": label, "value": self._correlation(current, left, right)} for label, left, right in pairs]
+        valid = sorted((item for item in correlations if item["value"] is not None),
+                       key=lambda item: abs(item["value"]), reverse=True)
+        findings = []
+        if valid:
+            strongest = valid[0]
+            findings.append(f'{strongest["label"]}呈{"正相关" if strongest["value"] > 0 else "负相关"}（相关系数 {strongest["value"]}）')
+        for key, label in (("play", "播放量"), ("blue_link", "蓝链数"), ("orders", "联盟订单"), ("commission", "联盟佣金")):
+            change = changes[key]
+            if change is not None:
+                findings.append(f'{label}较上一等长周期{"增长" if change >= 0 else "下降"}{abs(change):.1f}%')
+        recommendations = []
+        if changes.get("play") is not None and changes["play"] > 0 and (changes.get("orders") or 0) <= 0:
+            recommendations.append("播放增长未同步带动订单，建议复盘高播放内容的蓝链覆盖、商品承接页与转化路径。")
+        if changes.get("blue_link") is not None and changes["blue_link"] < 0:
+            recommendations.append("蓝链数量下降，建议优先补齐高播放内容的蓝链并跟进高价值达人。")
+        if not recommendations:
+            recommendations.append("优先放大与订单正相关度最高的指标，并持续观察至少7个有效数据日。")
+        return {"period_start": start.isoformat(), "period_end": end.isoformat(), "sample_days": len(current),
+                "totals": totals, "changes": changes, "correlations": correlations,
+                "findings": findings[:5], "recommendations": recommendations[:3],
+                "quality_note": "相关性用于发现联动关系，不等同于因果结论；少于3个有效数据日时不计算。"}
+
     def get_ai_context(self) -> dict:
         return {"overview": self.get_overview(), "top_creators": self.get_top_creators(10),
                 "brand_rankings": self.get_brand_rankings(), "creators": self.get_report().get("creators", [])[:50],
@@ -634,6 +685,12 @@ def api_creator_detail(creator_name: str = Query(..., description="达人名称"
 def api_daily_with_period(days: int = Query(7, ge=1, le=60), start_date: Optional[str] = None,
                           end_date: Optional[str] = None):
     return loader.get_daily_with_period(days, start_date, end_date)
+
+
+@app.get("/api/auto-analysis")
+def api_auto_analysis(days: int = Query(7, ge=1, le=60), start_date: Optional[str] = None,
+                      end_date: Optional[str] = None):
+    return loader.get_auto_analysis(start_date, end_date, days)
 
 
 @app.get("/api/roi-analysis")
