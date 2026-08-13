@@ -99,8 +99,8 @@ export async function POST(request: Request) {
     const ids = [...new Set(orders.flatMap((order) => String(order.talent || "").match(/\d{6,}/g) || []))];
     if (ids.length) {
       const [talents, leaders] = await Promise.all([
-        auth.admin.from("talents").select("name,match_id").eq("platform", "jd").in("match_id", ids),
-        auth.admin.from("leaders").select("name,match_id").eq("platform", "jd").in("match_id", ids),
+        auth.admin.from("talents").select("name,match_id").eq("platform", "jd").eq("product_category", category).in("match_id", ids),
+        auth.admin.from("leaders").select("name,match_id").eq("platform", "jd").eq("product_category", category).in("match_id", ids),
       ]);
       for (const item of [...(talents.data || []), ...(leaders.data || [])]) if (item.match_id) jdTalentNames.set(String(item.match_id), item.name);
     }
