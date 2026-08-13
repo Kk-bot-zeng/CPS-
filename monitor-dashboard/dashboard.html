@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CPS达人全链路操盘2.0 — 运营看板</title>
-<script src="/monitor-dashboard/echarts.min.js"></script>
+<script defer src="/monitor-dashboard/echarts.min.js"></script>
 <style>
 :root {
   --bg:#f5f7fb;--surface:#fff;--text:#172033;--muted:#667085;
@@ -66,7 +66,6 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .kpi-card .kpi-ratio{font-size:16px;font-weight:700;margin-top:4px}
 .kpi-card .kpi-yoy{font-size:12px;font-weight:600;margin-top:4px}
 .yoy-up{color:var(--red)}.yoy-down{color:var(--green)}
-.kpi-card[data-key="store_traffic"] .kpi-value,.kpi-card[data-key="store_traffic"] .kpi-ratio{color:#7c3aed}
 
 /* ─── Today Overview ─── */
 .today-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:16px 20px}
@@ -853,12 +852,9 @@ async function loadDashboard(days,startDate='',endDate=''){
   showLoading('正在加载所选周期数据...');
   try{
     const explicit=startDate&&endDate?`&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`:'';
-    const kpis=await apiGet(`/kpi-cards?period_select=${days}${explicit}`);
-    if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;}
-    const q=dateQuery();
-    const suffix=q?`?${q}`:'';
-    const join=q?`&${q}`:'';
-    const [daily,tasks,creators,thunderbirdCreators,brands,plan]=await Promise.all([
+    const join=explicit;
+    const [kpis,daily,tasks,creators,thunderbirdCreators,brands,plan]=await Promise.all([
+      apiGet(`/kpi-cards?period_select=${days}${explicit}`),
       apiGet(`/daily-with-period?days=${days}${join}`),
       apiGet('/today-tasks'),
       apiGet(`/top-creators?limit=10${join}`),
@@ -866,6 +862,7 @@ async function loadDashboard(days,startDate='',endDate=''){
       apiGet(`/brand-rankings?limit=20${join}`),
       apiGet('/action-plan')
     ]);
+    if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;}
     mergeState(kpis,null,null,daily,tasks,creators,brands,plan,thunderbirdCreators);
   }catch(err){console.error(err);alert(`数据加载失败：${err.message}`);}
   finally{hideLoading();}
@@ -945,6 +942,14 @@ function updateFooter(){
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{loadDailyData('7');});
+
+// Let the host page own scrolling so this dashboard visually behaves like a
+// native system module instead of a nested framed application.
+function reportDashboardHeight(){
+  window.parent.postMessage({type:'monitor-dashboard-height',height:document.documentElement.scrollHeight},window.location.origin);
+}
+new ResizeObserver(reportDashboardHeight).observe(document.documentElement);
+window.addEventListener('load',reportDashboardHeight);
 </script>
 </body>
 </html>

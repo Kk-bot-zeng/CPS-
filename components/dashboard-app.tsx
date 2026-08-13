@@ -263,7 +263,9 @@ export default function DashboardApp() {
         </header>
         <section className="content">
           {page === "总览" && <RealOverview channel={effectiveChannel} category={category} />}
-          {page === "B站操盘看板" && <BilibiliDashboard category={category} />}
+          <div className="bilibili-page-host" hidden={page !== "B站操盘看板"}>
+            <BilibiliDashboard category={category} />
+          </div>
           {page === "达人/团长管理" && <ResourceManager channel={channel} />}
           {page === "数据导入" && (
             <ImportPage
@@ -285,14 +287,28 @@ export default function DashboardApp() {
 }
 
 function BilibiliDashboard({ category }: { category: ProductCategory }) {
-  if (category === "tv") return <div className="monitor-dashboard-shell bilibili-empty">
-    <div className="monitor-dashboard-head"><div><h2>TV · B站操盘看板</h2><p>TV与显示器数据源相互隔离</p></div><span>等待接入TV的B站数据源</span></div>
-    <div className="empty-category-state"><MonitorPlay size={44}/><h3>暂无TV品类的B站交接数据</h3><p>当前交接包只包含显示器数据；后续接入TV数据后将在这里按相同模式展示。</p></div>
-  </div>;
-  return <div className="monitor-dashboard-shell">
-    <div className="monitor-dashboard-head"><div><h2>显示器 · B站操盘看板</h2><p>完整保留显示器原看板的数据口径、分析方式与下钻模式</p></div><span>数据截至 2026-08-13</span></div>
-    <iframe className="monitor-dashboard-frame" src="/monitor-dashboard/" title="显示器CPS达人全链路操盘看板" />
-  </div>;
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [frameHeight, setFrameHeight] = useState(1100);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow) return;
+      if (event.data?.type === "monitor-dashboard-height") {
+        setFrameHeight(Math.max(760, Number(event.data.height) || 0));
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  return <>
+    {category === "tv" && <div className="monitor-dashboard-shell bilibili-empty">
+      <div className="monitor-dashboard-head"><div><h2>TV · B站操盘看板</h2><p>TV与显示器数据源相互隔离</p></div><span>等待接入TV的B站数据源</span></div>
+      <div className="empty-category-state"><MonitorPlay size={44}/><h3>暂无TV品类的B站交接数据</h3><p>当前交接包只包含显示器数据；后续接入TV数据后将在这里按相同模式展示。</p></div>
+    </div>}
+    <div className="monitor-dashboard-shell" hidden={category !== "monitor"}>
+      <div className="monitor-dashboard-head"><div><h2>显示器 · B站操盘看板</h2><p>完整保留显示器原看板的数据口径、分析方式与下钻模式</p></div><span>数据截至 2026-08-13</span></div>
+      <iframe ref={frameRef} className="monitor-dashboard-frame" src="/monitor-dashboard/" title="显示器CPS达人全链路操盘看板" scrolling="no" style={{height:frameHeight}} />
+    </div>
+  </>;
 }
 
 function Overview({
