@@ -143,6 +143,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .stats-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
 
 .table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+.table-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:11px 0 2px;color:var(--muted);font-size:11px}.table-pager button{height:30px;min-width:60px;padding:0 10px;border:1px solid #d9e3f0;border-radius:7px;background:#fff;color:#315b9c;cursor:pointer}.table-pager button:disabled{opacity:.4;cursor:not-allowed}.metric-pair{white-space:nowrap}.metric-pair b{color:#1c355c}.metric-change{display:block;margin-top:2px;font-size:10px}.metric-change.up{color:var(--red)}.metric-change.down{color:var(--green)}.metric-change.flat{color:var(--muted)}
 
 /* Status tags */
 .tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500}
@@ -199,11 +200,11 @@ const state = {
   kpiCards: [],
   periodStart: '', periodEnd: '', selectedPeriod: '7',
   dailyCurve: null, prevCurve: null,
-  topCreators: [], thunderbirdCreators: [], brandRankings: [],
+  topCreators: [], thunderbirdCreators: [], creatorComparisons: [], brandRankings: [],
   actionPlan: {}, todayTasks: null,
   aiAnalysis: '', aiFresh: '',
   drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
-  activeModule: 'platform', latestAvailableDate:'', activeMetric:'content_count',
+  activeModule: 'platform', activeWB:'tabInvite', latestAvailableDate:'', activeMetrics:['content_count'], invitePage:1, churnPage:1, productPage:1,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -234,7 +235,7 @@ function renderApp(){
     ? `${renderModuleIntro('平台总览','查看平台整体内容、流量、蓝链与联盟转化表现')}${renderTodayOverview()}${renderKPISection()}`
     : state.activeModule==='industry'
       ? `${renderModuleIntro('行业分析','对比行业品牌的内容规模、播放表现与达人覆盖')}${renderContentAnalysis('industry')}`
-      : `${renderModuleIntro('达人工作台','管理达人建联、流失预警，并分析达人内容与转化效果')}${renderCreatorWorkbench()}${renderContentAnalysis('creator')}`;
+      : `${renderModuleIntro('达人工作台','管理达人建联、流失预警，并执行达人运营动作')}${renderCreatorWorkbench()}`;
   app.innerHTML=`
     ${renderModuleNav()}
     ${renderFilterBanner()}
@@ -419,10 +420,14 @@ const CORE_METRICS={
   jd_amount:{label:'京东联盟佣金',unit:'元',value:d=>Number(d.commission_amount||0)}
 };
 function renderCoreMetricChart(){
-  const buttons=Object.entries(CORE_METRICS).map(([key,m])=>`<button class="${state.activeMetric===key?'active':''}" onclick="selectCoreMetric('${key}')">${m.label}</button>`).join('');
-  return `<div class="chart-wrap"><div class="chart-toolbar"><div class="chart-toolbar-copy"><b>核心指标趋势</b><span>与上期同周期对比 · 点击折线节点可查看当天内容</span></div><div class="metric-switch">${buttons}</div></div><div class="chart-container" id="curveChart"></div></div>`;
+  const buttons=Object.entries(CORE_METRICS).map(([key,m])=>`<button class="${state.activeMetrics.includes(key)?'active':''}" onclick="selectCoreMetric('${key}')">${m.label}</button>`).join('');
+  return `<div class="chart-wrap"><div class="chart-toolbar"><div class="chart-toolbar-copy"><b>核心指标趋势</b><span>可同时选择多个指标 · 实线为本期，虚线为上期</span></div><div class="metric-switch">${buttons}</div></div><div class="chart-container" id="curveChart"></div></div>`;
 }
-function selectCoreMetric(key){state.activeMetric=key;renderApp();}
+function selectCoreMetric(key){const exists=state.activeMetrics.includes(key);if(exists&&state.activeMetrics.length===1)return;state.activeMetrics=exists?state.activeMetrics.filter(x=>x!==key):[...state.activeMetrics,key];renderApp();}
+
+function pctText(value){if(value==null)return'<span class="metric-change flat">上期为0，无法计算</span>';const cls=value>0?'up':value<0?'down':'flat';return `<span class="metric-change ${cls}">${value>0?'↑ ':value<0?'↓ ':''}${Math.abs(value).toFixed(1)}%</span>`;}
+function pager(name,page,total,pageSize=10){const pages=Math.max(1,Math.ceil(total/pageSize));return `<div class="table-pager"><span>共 ${total} 条 · 第 ${page}/${pages} 页</span><button ${page<=1?'disabled':''} onclick="setTablePage('${name}',${page-1})">上一页</button><button ${page>=pages?'disabled':''} onclick="setTablePage('${name}',${page+1})">下一页</button></div>`;}
+function setTablePage(name,page){state[name]=page;renderApp();}
 
 // ─── Drilled Down Content Detail Table ────────────────────────────────────────
 function renderDrillDown(){
@@ -493,8 +498,9 @@ async function loadDrilldownData(key,val){
 // ─── D. Content Analysis ──────────────────────────────────────────────────────
 function renderContentAnalysis(mode='industry'){
   const brands=state.brandRankings||[];
-  const creators=state.topCreators||[];
-  const thunderbirdCreators=state.thunderbirdCreators||[];
+  const comparisons=state.creatorComparisons||[];
+  const creators=comparisons.slice(0,10);
+  const thunderbirdCreators=comparisons.filter(c=>Number(c.thunderbird_link_count)>0||Number(c.previous_thunderbird_link_count)>0);
   let brandHTML='',creatorHTML='',allCreatorHTML='',roiHTML='';
 
   // Brand Rankings Table
@@ -538,24 +544,26 @@ function renderContentAnalysis(mode='industry'){
   // All relevant creators (本品内容分析)
   const hasWarning=c=>!!hasDecline(c);
   if(thunderbirdCreators.length){
+    const pageSize=10,pages=Math.max(1,Math.ceil(thunderbirdCreators.length/pageSize));state.productPage=Math.min(state.productPage,pages);
+    const pageRows=thunderbirdCreators.slice((state.productPage-1)*pageSize,state.productPage*pageSize);
     allCreatorHTML=`
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>#</th><th>达人昵称</th><th class="num">内容数</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th class="num">雷鸟转化</th></tr></thead>
-          <tbody>${thunderbirdCreators.map((c,i)=>`
+          <thead><tr><th>序号</th><th>达人昵称</th><th class="num">内容数/同比变化</th><th class="num">播放/同比变化</th><th class="num">互动/同比变化</th><th class="num">蓝链/同比变化</th><th class="num">雷鸟蓝链/同比变化</th><th class="num">雷鸟转化/同比变化</th></tr></thead>
+          <tbody>${pageRows.map((c,i)=>`
             <tr>
-              <td>${i+1}</td>
+              <td>${(state.productPage-1)*pageSize+i+1}</td>
               <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</a></td>
-              <td class="num">${fmt(c.content_count)}</td>
-              <td class="num">${fmt(c.play_count)}</td>
-              <td class="num">${fmt(c.interaction_count)}</td>
-              <td class="num">${fmt(c.blue_link_count)}</td>
-              <td class="num">${fmt(c.thunderbird_link_count)}</td>
-              <td class="num">${c.thunderbird_conversion==null?'-':fmt(c.thunderbird_conversion)}</td>
+              <td class="num metric-pair"><b>${fmt(c.content_count)}</b>${pctText(c.content_count_change_pct)}</td>
+              <td class="num metric-pair"><b>${fmt(c.play_count)}</b>${pctText(c.play_count_change_pct)}</td>
+              <td class="num metric-pair"><b>${fmt(c.interaction_count)}</b>${pctText(c.interaction_count_change_pct)}</td>
+              <td class="num metric-pair"><b>${fmt(c.blue_link_count)}</b>${pctText(c.blue_link_count_change_pct)}</td>
+              <td class="num metric-pair"><b>${fmt(c.thunderbird_link_count)}</b>${pctText(c.thunderbird_link_count_change_pct)}</td>
+              <td class="num metric-pair">${c.thunderbird_conversion==null?'数据未提供':`${fmt(c.thunderbird_conversion)}${pctText(c.conversion_change_pct)}`}</td>
             </tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">所选周期暂无雷鸟蓝链达人</td></tr>'}
         </tbody>
         </table>
-      </div>`;
+      </div>${pager('productPage',state.productPage,thunderbirdCreators.length,pageSize)}`;
   }
 
   // AI Analysis button and text
@@ -581,6 +589,12 @@ function renderContentAnalysis(mode='industry'){
 
     <!-- All brand/creator/date drill-downs live here, immediately above Top10. -->
     ${renderDrillDown()}
+
+    <div class="content-section-title">&#127942; 达人内容与效果分析 <span style="font-size:11px;color:var(--muted);font-weight:400">(当前筛选周期Top10)</span></div>
+    <div style="padding:0 20px 16px">${creatorHTML}</div>
+
+    <div class="content-section-title">&#128202; 本品内容分析 <span style="font-size:11px;color:var(--muted);font-weight:400">(本期与上一等长周期对比)</span></div>
+    <div style="padding:0 20px 16px">${allCreatorHTML}</div>
   </section>`;
 
   return `
@@ -588,14 +602,6 @@ function renderContentAnalysis(mode='industry'){
     <div class="section-header"><h2>达人内容与效果分析</h2></div>
 
     ${renderDrillDown()}
-
-    <!-- Top10达人 -->
-    <div class="content-section-title">&#127942; 内容Top10达人 <span style="font-size:11px;color:var(--muted);font-weight:400">(点击达人名→查看具体笔记，&#9888;表示趋势下降)</span></div>
-    <div style="padding:0 20px 16px">${creatorHTML}</div>
-
-    <!-- 本品内容分析 -->
-    <div class="content-section-title">&#128202; 本品内容分析 <span style="font-size:11px;color:var(--muted);font-weight:400">(有下降预警的达人已标注)</span></div>
-    <div style="padding:0 20px 16px">${allCreatorHTML}</div>
 
     <!-- AI一句话分析 -->
     <div class="ai-insight">
@@ -629,29 +635,33 @@ function renderCreatorWorkbench(){
   const churnCount=counts['流失预警']||churn.length;
   const hvCount=counts['高价值基本盘']||highVal.length;
   const polCount=counts['政策倾斜建议']||policy.length;
+  const pageSize=10,invitePages=Math.max(1,Math.ceil(pending.length/pageSize)),churnPages=Math.max(1,Math.ceil(churn.length/pageSize));
+  state.invitePage=Math.min(state.invitePage,invitePages);state.churnPage=Math.min(state.churnPage,churnPages);
+  const pendingPage=pending.slice((state.invitePage-1)*pageSize,state.invitePage*pageSize);
+  const churnPageRows=churn.slice((state.churnPage-1)*pageSize,state.churnPage*pageSize);
 
   // Pending Invitation Table
-  const inviteRows=pending.map((d,i)=>`
+  const inviteRows=pendingPage.map((d,i)=>`
     <tr>
       <td><input type="checkbox" class="item-check" checked></td>
-      <td>${i+1}</td>
+      <td>${(state.invitePage-1)*pageSize+i+1}</td>
       <td>${d.recommended_action||'优先建联'}</td>
       <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(d.creator_name||d.name||'')}')">${d.creator_name||d.name||d.creator_or_pin||('达人'+(i+1))}</a></td>
       <td style="font-size:11px;color:var(--muted)">${d.reason||d.recommended_action||'-'}</td>
     </tr>`).join('');
 
   // Churn Warning Table
-  const churnRows=churn.map((d,i)=>{
-    const prevN=Number(d.previous_sales||d.previous_commission||0);
-    const curN=Number(d.current_sales||d.current_commission||0);
-    const delta=curN-prevN;
+  const churnRows=churnPageRows.map((d,i)=>{
+    const play=Number(d.play_count||0),prevPlay=Number(d.previous_play_count||0),links=Number(d.blue_link_count||0),prevLinks=Number(d.previous_blue_link_count||0);
+    const ready=d.metric_data_status==='ready';
     return `<tr>
-      <td>${i+1}</td>
-      <td>${d.creator_or_pin||d.creator_name||'达人'}</td>
-      <td class="num">${prevN}</td>
-      <td class="num">${curN}</td>
-      <td class="num" style="color:${delta>=0?'var(--green)':'var(--red)'}">${delta>=0?'+':''}${delta}</td>
-      <td><span class="tag tag-red">&#9888; 预警</span></td>
+      <td>${(state.churnPage-1)*pageSize+i+1}</td>
+      <td>${d.creator_name||d.creator_or_pin||'达人'}</td>
+      <td class="num metric-pair"><b>${ready?`${fmt(play)} / ${fmt(prevPlay)}`:'未匹配B站达人'}</b></td>
+      <td class="num">${ready?pctText(d.play_count_change_pct):'<span class="metric-change flat">暂无可比数据</span>'}</td>
+      <td class="num metric-pair"><b>${ready?`${fmt(links)} / ${fmt(prevLinks)}`:'未匹配B站达人'}</b></td>
+      <td class="num">${ready?pctText(d.blue_link_count_change_pct):'<span class="metric-change flat">暂无可比数据</span>'}</td>
+      <td><span class="tag tag-red">&#9888; ${d.status||'预警'}</span></td>
       <td style="font-size:11px">${d.recommended_action||'定向触达/调整政策'}</td>
     </tr>`;
   });
@@ -689,14 +699,14 @@ function renderCreatorWorkbench(){
 
     <!-- Tabs -->
     <div class="workbench-tabs">
-      <div class="workbench-tab active" onclick="switchWBTab(this,'tabInvite')">&#128203; 达人建联工作台</div>
-      <div class="workbench-tab" onclick="switchWBTab(this,'tabChurn')">&#9888;&#65039; 流失预警</div>
-      <div class="workbench-tab" onclick="switchWBTab(this,'tabHighValue')">&#128142; 高价值基本盘</div>
-      <div class="workbench-tab" onclick="switchWBTab(this,'tabRoi')">&#128200; 投放ROI分析</div>
+      <div class="workbench-tab ${state.activeWB==='tabInvite'?'active':''}" onclick="switchWBTab(this,'tabInvite')">&#128203; 达人建联工作台</div>
+      <div class="workbench-tab ${state.activeWB==='tabChurn'?'active':''}" onclick="switchWBTab(this,'tabChurn')">&#9888;&#65039; 流失预警</div>
+      <div class="workbench-tab ${state.activeWB==='tabHighValue'?'active':''}" onclick="switchWBTab(this,'tabHighValue')">&#128142; 高价值基本盘</div>
+      <div class="workbench-tab ${state.activeWB==='tabRoi'?'active':''}" onclick="switchWBTab(this,'tabRoi')">&#128200; 投放ROI分析</div>
     </div>
 
     <!-- Tab 1: 待建联 -->
-    <div class="workbench-panel active" id="tabInvite">
+    <div class="workbench-panel ${state.activeWB==='tabInvite'?'active':''}" id="tabInvite">
       <div class="invite-toolbar">
         <input type="checkbox" class="check-all" checked onchange="toggleCheckAll(this)"> 全选
         <button class="primary" onclick="autoGenerateText()">&#129302; 自动生成话术</button>
@@ -710,20 +720,22 @@ function renderCreatorWorkbench(){
           <tbody>${inviteRows||'<tr><td colspan="5" style="text-align:center;color:var(--muted)">暂无待建联达人</td></tr>'}</tbody>
         </table>
       </div>
+      ${pager('invitePage',state.invitePage,pending.length,pageSize)}
     </div>
 
     <!-- Tab 2: 流失预警 -->
-    <div class="workbench-panel" id="tabChurn">
+    <div class="workbench-panel ${state.activeWB==='tabChurn'?'active':''}" id="tabChurn">
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>#</th><th>达人/PIN</th><th>上月数据</th><th>本月数据</th><th>变化</th><th>状态</th><th>建议动作</th></tr></thead>
-          <tbody>${churnRows||'<tr><td colspan="7" style="text-align:center;color:var(--muted)">暂无流失预警达人</td></tr>'}</tbody>
+          <thead><tr><th>#</th><th>达人昵称</th><th>本月播放/上月播放</th><th>播放同比</th><th>本月蓝链/上月蓝链</th><th>蓝链同比</th><th>状态</th><th>建议动作</th></tr></thead>
+          <tbody>${churnRows||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">暂无流失预警达人</td></tr>'}</tbody>
         </table>
       </div>
+      ${pager('churnPage',state.churnPage,churn.length,pageSize)}
     </div>
 
     <!-- Tab 3: 高价值基本盘 -->
-    <div class="workbench-panel" id="tabHighValue">
+    <div class="workbench-panel ${state.activeWB==='tabHighValue'?'active':''}" id="tabHighValue">
       <div class="table-scroll">
         <table class="data-table">
           <thead><tr><th>#</th><th>达人</th><th>推荐理由</th><th>质量标签</th><th>建议动作</th></tr></thead>
@@ -733,7 +745,7 @@ function renderCreatorWorkbench(){
     </div>
 
     <!-- Tab 4: 投放ROI分析 -->
-    <div class="workbench-panel" id="tabRoi">
+    <div class="workbench-panel ${state.activeWB==='tabRoi'?'active':''}" id="tabRoi">
       <div class="invite-toolbar">
         <button onclick="importInvestmentData()">&#128196; 导入费用明细</button>
         <select id="roiPeriodSelect"><option value="30">30天</option><option value="60">60天</option><option value="90">90天</option></select>
@@ -768,6 +780,7 @@ function renderFooter(){
 
 // ─── Tab Switching ────────────────────────────────────────────────────────────
 function switchWBTab(el,tabId){
+  state.activeWB=tabId;
   $$('.workbench-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   $$('.workbench-panel').forEach(p=>p.classList.remove('active'));
@@ -791,8 +804,8 @@ function initCharts(){
   const pp=state.prevCurve||[];
   const labels=cp.map(d=>d.date||'');
 
-  const metric=CORE_METRICS[state.activeMetric]||CORE_METRICS.content_count;
-  const currentValues=cp.map(metric.value),previousValues=pp.map(metric.value);
+  const selected=state.activeMetrics.map(key=>[key,CORE_METRICS[key]]).filter(x=>x[1]);
+  const colors=['#2563eb','#10b981','#f59e0b','#8b5cf6','#06b6d4','#ef4444'];
 
   const option={
     tooltip:{
@@ -805,22 +818,24 @@ function initCharts(){
         const idx=params[0].dataIndex;
         const item=cp[idx]||{};
         let html=`<div style="font-weight:700;margin-bottom:4px">${item.date||labels[idx]}</div>`;
-        html+=`${metric.label}: <b>${fmt(metric.value(item))} ${metric.unit}</b>`;
+        selected.forEach(([,metric])=>{html+=`${metric.label}: <b>${fmt(metric.value(item))} ${metric.unit}</b><br>`});
         return html;
       }
     },
-    legend:{data:[`${metric.label}（本期）`,`${metric.label}（上期）`],bottom:4,textStyle:{fontSize:11}},
+    legend:{data:selected.flatMap(([,m])=>[`${m.label}（本期）`,`${m.label}（上期）`]),bottom:4,type:'scroll',textStyle:{fontSize:11}},
     grid:{top:36,bottom:52,left:58,right:26},
     xAxis:{type:'category',data:labels,axisLine:{lineStyle:{color:'#e5e7eb'}},axisLabel:{interval:0,margin:12,color:'#667085'}},
-    yAxis:{type:'value',name:metric.unit,axisLine:{show:false},axisLabel:{formatter:v=>fmt(v)},splitLine:{lineStyle:{type:'dashed',color:'#e6ebf2'}}},
-    series:[
-      cp.length===1
-        ? {name:`${metric.label}（本期）`,type:'bar',data:currentValues,barMaxWidth:58,itemStyle:{color:'#2563eb',borderRadius:[8,8,0,0]},label:{show:true,position:'top',formatter:p=>`${fmt(p.value)} ${metric.unit}`,color:'#1d4f9e',fontWeight:700}}
-        : {name:`${metric.label}（本期）`,type:'line',data:currentValues,smooth:.28,symbol:'circle',symbolSize:7,lineStyle:{color:'#2563eb',width:3},areaStyle:{color:'rgba(37,99,235,.08)'},itemStyle:{color:'#2563eb'}},
-      cp.length===1
-        ? {name:`${metric.label}（上期）`,type:'bar',data:previousValues,barMaxWidth:58,itemStyle:{color:'#b8c9e7',borderRadius:[8,8,0,0]},label:{show:true,position:'top',formatter:p=>`${fmt(p.value)} ${metric.unit}`,color:'#7a8da9'}}
-        : {name:`${metric.label}（上期）`,type:'line',data:previousValues,smooth:.28,symbol:'none',lineStyle:{type:'dashed',color:'#9fbbe8',width:2}},
-    ],
+    yAxis:{type:'value',axisLine:{show:false},axisLabel:{formatter:v=>fmt(v)},splitLine:{lineStyle:{type:'dashed',color:'#e6ebf2'}}},
+    series:selected.flatMap(([,metric],index)=>{
+      const color=colors[index%colors.length],current=cp.map(metric.value),previous=pp.map(metric.value);
+      return cp.length===1?[
+        {name:`${metric.label}（本期）`,type:'bar',data:current,barMaxWidth:34,itemStyle:{color,borderRadius:[6,6,0,0]},label:{show:true,position:'top',formatter:p=>fmt(p.value),color,fontWeight:700}},
+        {name:`${metric.label}（上期）`,type:'bar',data:previous,barMaxWidth:34,itemStyle:{color,opacity:.35,borderRadius:[6,6,0,0]},label:{show:true,position:'top',formatter:p=>fmt(p.value),color:'#7a8da9'}}
+      ]:[
+        {name:`${metric.label}（本期）`,type:'line',data:current,smooth:.28,symbol:'circle',symbolSize:6,lineStyle:{color,width:2.5},itemStyle:{color}},
+        {name:`${metric.label}（上期）`,type:'line',data:previous,smooth:.28,symbol:'none',lineStyle:{type:'dashed',color,width:1.5,opacity:.5}}
+      ];
+    }),
   };
   curveChartInstance.setOption(option);
   window.addEventListener('resize',()=>curveChartInstance&&curveChartInstance.resize());
@@ -857,24 +872,25 @@ async function loadDashboard(days,startDate='',endDate=''){
   try{
     const explicit=startDate&&endDate?`&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`:'';
     const join=explicit;
-    const [kpis,daily,tasks,creators,thunderbirdCreators,brands,plan]=await Promise.all([
+    const [kpis,daily,tasks,creators,thunderbirdCreators,comparisons,brands,plan]=await Promise.all([
       apiGet(`/kpi-cards?period_select=${days}${explicit}`),
       apiGet(`/daily-with-period?days=${days}${join}`),
       apiGet('/today-tasks'),
       apiGet(`/top-creators?limit=10${join}`),
-      apiGet(`/top-creators?limit=50&scope=thunderbird${join}`),
+      apiGet(`/top-creators?limit=5000&scope=thunderbird${join}`),
+      apiGet(`/creator-comparison?scope=all${join}`),
       apiGet(`/brand-rankings?limit=20${join}`),
-      apiGet('/action-plan')
+      apiGet(`/action-plan?${explicit.slice(1)}`)
     ]);
     if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;if(!state.latestAvailableDate)state.latestAvailableDate=kpis.period_end;}
-    mergeState(kpis,null,null,daily,tasks,creators,brands,plan,thunderbirdCreators);
+    mergeState(kpis,null,null,daily,tasks,creators,brands,plan,thunderbirdCreators,comparisons);
   }catch(err){console.error(err);alert(`数据加载失败：${err.message}`);}
   finally{hideLoading();}
   renderApp();
   updateFooter();
 }
 
-function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan,thunderbirdCreators){
+function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan,thunderbirdCreators,comparisons){
   if(kpis&&kpis.cards)state.kpiCards=kpis.cards;
   if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;}
   if(daily&&daily.current_period)state.dailyCurve=daily.current_period;
@@ -882,6 +898,7 @@ function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan
   if(tasks)state.todayTasks=tasks;
   if(creators)state.topCreators=creators;
   if(thunderbirdCreators)state.thunderbirdCreators=thunderbirdCreators;
+  if(comparisons)state.creatorComparisons=comparisons;
   if(brands)state.brandRankings=brands;
   if(plan)state.actionPlan=plan;
 }

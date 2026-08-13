@@ -269,6 +269,46 @@ class DataLoader:
         rows = sorted(grouped.values(), key=lambda item: (item["play_count"], item["thunderbird_link_count"]), reverse=True)
         return rows[:limit]
 
+    @staticmethod
+    def _change_pct(current: float, previous: float) -> Optional[float]:
+        if not previous:
+            return None if current else 0.0
+        return round((current - previous) / abs(previous) * 100, 2)
+
+    def get_creator_comparison(self, start_date: Optional[str] = None,
+                               end_date: Optional[str] = None, scope: str = "all") -> list:
+        start, end = self._resolve_period(start_date, end_date)
+        previous_start, previous_end = self._previous_period(start, end)
+        metrics = ("content_count", "play_count", "interaction_count", "blue_link_count", "thunderbird_link_count")
+
+        def aggregate(period_start: date, period_end: date) -> dict[str, dict]:
+            grouped: dict[str, dict] = {}
+            for row in self._filter_content(period_start, period_end, scope=scope):
+                key = row.get("creator_id") or row.get("creator_name") or "未知达人"
+                entry = grouped.setdefault(key, {"creator_id": row.get("creator_id", ""),
+                    "creator_name": row.get("creator_name") or "未知达人", **{m: 0 for m in metrics}})
+                entry["content_count"] += 1
+                for metric in metrics[1:]:
+                    entry[metric] += int(_num(row.get(metric)))
+            return grouped
+
+        current, previous = aggregate(start, end), aggregate(previous_start, previous_end)
+        result = []
+        for key in set(current) | set(previous):
+            fallback = previous.get(key, {})
+            cur = current.get(key) or {"creator_id": fallback.get("creator_id", ""),
+                "creator_name": fallback.get("creator_name", "未知达人"), **{m: 0 for m in metrics}}
+            prev = previous.get(key, {m: 0 for m in metrics})
+            item = {"creator_id": cur.get("creator_id", ""), "creator_name": cur.get("creator_name", "未知达人"),
+                    "thunderbird_conversion": None, "previous_thunderbird_conversion": None,
+                    "conversion_change_pct": None, "conversion_data_status": "unavailable"}
+            for metric in metrics:
+                item[metric] = cur.get(metric, 0)
+                item[f"previous_{metric}"] = prev.get(metric, 0)
+                item[f"{metric}_change_pct"] = self._change_pct(cur.get(metric, 0), prev.get(metric, 0))
+            result.append(item)
+        return sorted(result, key=lambda item: (item["play_count"], item["thunderbird_link_count"]), reverse=True)
+
     def get_brand_rankings(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
                            limit: int = 20) -> list:
         start, end = self._resolve_period(start_date, end_date)
@@ -306,7 +346,7 @@ class DataLoader:
             amt.append(round(_num(d.get("commission_amount", 0))))
         return {"labels": labels, "content_count": cnt, "link_count": lk, "sales_count": sal, "amount": amt}
 
-    def get_action_plan(self) -> dict:
+    def get_action_plan(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> dict:
         r = self.get_report()
         ap = r.get("action_plan", {}) or {}
         kv = {}
@@ -326,6 +366,19 @@ class DataLoader:
         plan = {"待建联": kv.get("pending", []), "流失预警": kv.get("churn", r.get("creator_churn", [])),
                 "高价值基本盘": kv.get("highval", []), "政策倾斜建议": kv.get("policy", [])}
         plan["counts"] = {k: len(v) for k, v in plan.items()}
+        _, selected_end = self._resolve_period(start_date, end_date)
+        month_start = selected_end.replace(day=1)
+        comparisons = self.get_creator_comparison(month_start.isoformat(), selected_end.isoformat())
+        by_name = {row["creator_name"]: row for row in comparisons}
+        enriched = []
+        for row in plan["流失预警"]:
+            name = row.get("creator_name") or row.get("creator_or_pin") or row.get("name") or "未知达人"
+            metric = by_name.get(name, {})
+            enriched.append({**row, **metric, "creator_name": name,
+                "metric_data_status": "ready" if metric else "unmatched",
+                "status": row.get("status") or (row.get("evidence") or {}).get("status") or "预警",
+                "recommended_action": row.get("recommended_action") or "针对流失达人定向触达或调整政策"})
+        plan["流失预警"] = enriched
         return plan
 
     def get_today_tasks(self) -> dict:
@@ -524,7 +577,7 @@ def api_overview():
 
 
 @app.get("/api/top-creators")
-def api_top_creators(limit: int = Query(10, ge=1, le=50), start_date: Optional[str] = None,
+def api_top_creators(limit: int = Query(10, ge=1, le=5000), start_date: Optional[str] = None,
                      end_date: Optional[str] = None, scope: str = "all"):
     return loader.get_top_creators(limit, start_date, end_date, scope)
 
@@ -536,8 +589,13 @@ def api_brand_rankings(start_date: Optional[str] = None, end_date: Optional[str]
 
 
 @app.get("/api/action-plan")
-def api_action_plan():
-    return loader.get_action_plan()
+def api_action_plan(start_date: Optional[str] = None, end_date: Optional[str] = None):
+    return loader.get_action_plan(start_date, end_date)
+
+@app.get("/api/creator-comparison")
+def api_creator_comparison(start_date: Optional[str] = None, end_date: Optional[str] = None,
+                           scope: str = "all"):
+    return loader.get_creator_comparison(start_date, end_date, scope)
 
 
 @app.get("/api/daily-curve")
