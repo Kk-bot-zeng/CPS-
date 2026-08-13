@@ -72,6 +72,8 @@ const money = (v: number) =>
 const seriesOf = (name: string) =>
   (name.replace(/^\s*\d{2,3}(?:\.\d+)?\s*/, "").replace(/\s+/g, "").replace(/(Plus|Ultra|Pro)/i, " $1").trim() || name);
 const responseCache = new Map<string, { value: unknown; at: number }>();
+const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const relativeDateKey = (days: number) => { const date = new Date(); date.setDate(date.getDate() + days); return localDateKey(date); };
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const isGet = !init?.method || init.method === "GET";
   const cached = responseCache.get(url);
@@ -89,9 +91,9 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [talentOptions, setTalentOptions] = useState<{ value: string; label: string }[]>([]);
   const [modelOptions, setModelOptions] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [start, setStart] = useState("2026-01-01");
-  const [end, setEnd] = useState("2026-12-31");
-  const [datePreset, setDatePreset] = useState("custom");
+  const [start, setStart] = useState(() => relativeDateKey(-1));
+  const [end, setEnd] = useState(() => relativeDateKey(-1));
+  const [datePreset, setDatePreset] = useState("yesterday");
   const [showCustomDates, setShowCustomDates] = useState(false);
   const [talent, setTalent] = useState("all");
   const [model, setModel] = useState("all");
@@ -101,7 +103,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   const [selectedProduct, setSelectedProduct] = useState("");
   const applyDatePreset = (preset: string) => {
     const today = new Date();
-    const key = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const key = localDateKey;
     const offset = (days: number) => { const date = new Date(today); date.setDate(date.getDate() + days); return key(date); };
     let nextStart = key(today), nextEnd = key(today);
     if (preset === "yesterday") nextStart = nextEnd = offset(-1);
@@ -116,7 +118,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
     const span = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
     const comparisonEnd = new Date(from); comparisonEnd.setDate(comparisonEnd.getDate() - 1);
     const comparisonStart = new Date(comparisonEnd); comparisonStart.setDate(comparisonStart.getDate() - span + 1);
-    const key = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const key = localDateKey;
     return `${key(comparisonStart)} ~ ${key(comparisonEnd)}`;
   }, [start, end]);
   const load = useCallback(async () => {
@@ -149,6 +151,7 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
   const today = summary.daily.at(-1);
+  const overviewLabel = start === end && start === relativeDateKey(-1) ? "昨日销售概览" : start === end && start === relativeDateKey(0) ? "今日销售概览" : "所选时段销售概览";
   const rankedProducts = productView === "model" ? summary.products : summary.seriesProducts;
   const productTalents = selectedProduct
     ? summary.talentModels.filter((x) => productView === "series" ? seriesOf(x.model) === selectedProduct : x.model === selectedProduct).reduce((map, x) => {
@@ -197,11 +200,11 @@ export function RealOverview({ channel }: { channel: ChannelFilter }) {
       <section className="command-brief">
         <div className="command-brief-copy">
           <span className="live-dot">● 实时经营中</span>
-          <strong>今日销售概览</strong>
+          <strong>{overviewLabel}</strong>
           <small>{today ? `${today.date} · 已同步 ${today.orders.toLocaleString()} 笔订单` : "等待订单数据同步"}</small>
         </div>
-        <div className="command-brief-stat"><span>今日销售额</span><b>{today ? money(today.gmv) : "¥0"}</b></div>
-        <div className="command-brief-stat"><span>今日销售台数</span><b>{today ? `${today.qty.toLocaleString()} 台` : "0 台"}</b></div>
+        <div className="command-brief-stat"><span>所选时段销售额</span><b>{money(summary.gmv)}</b></div>
+        <div className="command-brief-stat"><span>所选时段销售台数</span><b>{summary.quantity.toLocaleString()} 台</b></div>
       </section>
       <div className={`kpi-grid ${channel === "jd" ? "jd-kpis" : ""}`}>
         <RealKpi

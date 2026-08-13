@@ -235,10 +235,6 @@ export default function DashboardApp() {
       </aside>
       <main className="main-area">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">FFALCON BUSINESS OPERATIONS</p>
-            <h1>{page}</h1>
-          </div>
           <div className="top-actions">
             <BusinessSelect className="channel-business-select" label="当前渠道" value={channel} onChange={(value) => setChannel(value as ChannelFilter)} options={[{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />
             <div className="global-search">

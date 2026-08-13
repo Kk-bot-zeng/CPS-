@@ -107,6 +107,7 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
 @media(max-width:850px){.date-range-bar{width:100%;justify-content:flex-start}.date-range-summary{min-width:172px}.custom-date-popover{right:0;align-items:stretch;flex-wrap:wrap;width:min(440px,calc(100vw - 110px))}.custom-date-popover label{flex:1;min-width:150px}.custom-date-popover input{width:100%}.real-actions{justify-content:stretch}}
 
 /* Balanced dashboard toolbar: one compact row on desktop, two deliberate rows on narrower screens. */
+.topbar{justify-content:flex-end;height:64px}.content{padding-top:5px}
 .page-title{display:block!important;padding-bottom:12px}.page-title>div:first-child{margin-bottom:12px}
 .real-actions{display:grid!important;grid-template-columns:minmax(560px,1fr) minmax(170px,200px) minmax(170px,200px) 82px 104px;align-items:center;gap:10px;width:100%!important;max-width:none!important;min-height:58px;padding:7px!important;margin:0!important;border-radius:14px!important;overflow:visible}
 .real-actions .date-range-bar{width:100%;min-width:0;height:44px;padding-left:12px}
