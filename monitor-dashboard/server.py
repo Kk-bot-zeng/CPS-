@@ -471,8 +471,10 @@ class DataLoader:
     def get_daily_with_period(self, days: int = 7, start_date: Optional[str] = None,
                               end_date: Optional[str] = None) -> dict:
         current, previous = self._daily_periods(days, start_date, end_date)
-        keys = ["date", "new_content", "thunderbird_linked_content_count", "thunderbird_link_count", "total_blue_link_count",
-                "sales_quantity", "commission_amount", "play_count"]
+        keys = ["date", "new_content", "thunderbird_linked_content_count", "all_monitored_content_count",
+                "thunderbird_link_count", "total_blue_link_count", "sales_quantity", "commission_amount",
+                "play_count", "all_monitored_play_count", "jdsz_transaction_item_quantity",
+                "jdsz_transaction_amount", "search_visitors", "outdoor_visitors", "total_visitors"]
 
         def clean(items):
             return [{k: d.get(k, 0) for k in keys} for d in items]

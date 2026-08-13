@@ -27,7 +27,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .header .data-time{color:#94a3b8;font-size:11px}
 
 /* Main */
-.main{max-width:1520px;margin:0 auto;padding:12px 16px 40px}
+.main{width:100%;max-width:none;margin:0;padding:12px clamp(10px,1.2vw,20px) 40px}
 
 /* Top-level business module navigation */
 .module-nav{position:sticky;top:0;z-index:90;display:flex;align-items:center;gap:4px;margin:-12px -16px 18px;padding:10px 16px;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(29,55,90,.06);backdrop-filter:blur(10px)}
@@ -112,8 +112,8 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .ai-generate-btn:hover{background:var(--green);color:#fff}
 
 /* Chart */
-.chart-wrap{padding:0 20px 16px}
-.chart-wrap .chart-container{height:280px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.chart-wrap{padding:14px 18px 18px}.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px}.chart-toolbar-copy b{display:block;color:var(--dark);font-size:13px}.chart-toolbar-copy span{color:var(--muted);font-size:10px}.metric-switch{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.metric-switch button{height:30px;padding:0 11px;border:1px solid #d9e3f0;border-radius:7px;background:#fff;color:#596a83;font:600 11px inherit;cursor:pointer}.metric-switch button:hover{border-color:#9bb9e5;color:var(--blue)}.metric-switch button.active{border-color:#b9d1f8;background:#eaf2ff;color:var(--blue)}
+.chart-wrap .chart-container{height:300px;border:1px solid var(--line);border-radius:9px;background:linear-gradient(180deg,#fbfdff,#fff)}
 
 /* ─── Content Detail Table (drill-down) ─── */
 .drilldown-section{margin:0 20px 20px;padding:12px 16px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:var(--radius)}
@@ -203,7 +203,7 @@ const state = {
   actionPlan: {}, todayTasks: null,
   aiAnalysis: '', aiFresh: '',
   drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
-  activeModule: 'platform',
+  activeModule: 'platform', latestAvailableDate:'', activeMetric:'content_count',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ function renderApp(){
     ? `${renderModuleIntro('平台总览','查看平台整体内容、流量、蓝链与联盟转化表现')}${renderTodayOverview()}${renderKPISection()}`
     : state.activeModule==='industry'
       ? `${renderModuleIntro('行业分析','对比行业品牌的内容规模、播放表现与达人覆盖')}${renderContentAnalysis('industry')}`
-      : `${renderModuleIntro('达人工作台','管理达人建联、流失预警，并分析达人内容与转化效果')}${renderCreatorEffectChart()}${renderCreatorWorkbench()}${renderContentAnalysis('creator')}`;
+      : `${renderModuleIntro('达人工作台','管理达人建联、流失预警，并分析达人内容与转化效果')}${renderCreatorWorkbench()}${renderContentAnalysis('creator')}`;
   app.innerHTML=`
     ${renderModuleNav()}
     ${renderFilterBanner()}
@@ -385,6 +385,7 @@ function renderKPISection(){
   return `
   <section class="section">
     <div class="section-header"><h2>二、核心指标总览（点击下钻→内容明细）</h2></div>
+    ${renderCoreMetricChart()}
     <div class="kpi-grid">
       ${cards.map((card,i)=>{
         const isUp=card.yoy_direction==='↑';
@@ -408,6 +409,20 @@ function renderKPISection(){
     </div>
   </section>`;
 }
+
+const CORE_METRICS={
+  content_count:{label:'内容数',unit:'条',value:d=>Number(d.thunderbird_linked_content_count||0)},
+  link_count:{label:'蓝链数',unit:'个',value:d=>Number(d.thunderbird_link_count||0)},
+  play_count:{label:'播放量',unit:'次',value:d=>Number(d.play_count||0)},
+  store_traffic:{label:'店铺流量',unit:'人',value:d=>Number(d.search_visitors||0)+Number(d.outdoor_visitors||0)},
+  jd_orders:{label:'京东联盟订单',unit:'单',value:d=>Number(d.sales_quantity||0)},
+  jd_amount:{label:'京东联盟佣金',unit:'元',value:d=>Number(d.commission_amount||0)}
+};
+function renderCoreMetricChart(){
+  const buttons=Object.entries(CORE_METRICS).map(([key,m])=>`<button class="${state.activeMetric===key?'active':''}" onclick="selectCoreMetric('${key}')">${m.label}</button>`).join('');
+  return `<div class="chart-wrap"><div class="chart-toolbar"><div class="chart-toolbar-copy"><b>核心指标趋势</b><span>与上期同周期对比 · 点击折线节点可查看当天内容</span></div><div class="metric-switch">${buttons}</div></div><div class="chart-container" id="curveChart"></div></div>`;
+}
+function selectCoreMetric(key){state.activeMetric=key;renderApp();}
 
 // ─── Drilled Down Content Detail Table ────────────────────────────────────────
 function renderDrillDown(){
@@ -595,13 +610,6 @@ function renderContentAnalysis(mode='industry'){
   </section>`;
 }
 
-function renderCreatorEffectChart(){
-  return `<section class="section creator-effect-section">
-    <div class="section-header"><h2>内容效果分析</h2></div>
-    <div class="chart-wrap" style="padding-top:16px"><div class="chart-container" id="curveChart"></div></div>
-  </section>`;
-}
-
 function hasDecline(c){
   // Check if creator shows declining indicators
   if(c.trend&&c.trend.includes('下降'))return true;
@@ -783,14 +791,8 @@ function initCharts(){
   const pp=state.prevCurve||[];
   const labels=cp.map(d=>d.date||'');
 
-  // Current period data
-  const newContent=cp.map(d=>d.thunderbird_linked_content_count||0);
-  const blueLinks=cp.map(d=>d.total_blue_link_count||0);
-  const commission=cp.map(d=>d.commission_amount||0);
-
-  // Previous period data (dashed lines)
-  const newContentPrev=pp.map(d=>d.thunderbird_linked_content_count||0);
-  const blueLinksPrev=pp.map(d=>d.total_blue_link_count||0);
+  const metric=CORE_METRICS[state.activeMetric]||CORE_METRICS.content_count;
+  const currentValues=cp.map(metric.value),previousValues=pp.map(metric.value);
 
   const option={
     tooltip:{
@@ -803,29 +805,19 @@ function initCharts(){
         const idx=params[0].dataIndex;
         const item=cp[idx]||{};
         let html=`<div style="font-weight:700;margin-bottom:4px">${item.date||labels[idx]}</div>`;
-        html+=`雷鸟内容: <b>${item.thunderbird_linked_content_count||0}</b><br>`;
-        html+=`蓝链数: <b>${item.total_blue_link_count||0}</b><br>`;
-        html+=`雷鸟闪电令: <b>${item.thunderbird_link_count||0}</b><br>`;
-        html+=`联盟佣金（非GMV）: <b>¥${fmtY(item.commission_amount)}</b>`;
+        html+=`${metric.label}: <b>${fmt(metric.value(item))} ${metric.unit}</b>`;
         return html;
       }
     },
-    legend:{data:['雷鸟内容(本期)','雷鸟内容(上期)','蓝链数(本期)','雷鸟蓝链数','联盟佣金（非GMV）'],bottom:4,textStyle:{fontSize:11}},
-    grid:{top:40,bottom:30,left:50,right:70},
+    legend:{data:[`${metric.label}（本期）`,`${metric.label}（上期）`],bottom:4,textStyle:{fontSize:11}},
+    grid:{top:36,bottom:36,left:58,right:26},
     xAxis:{type:'category',data:labels,axisLine:{lineStyle:{color:'#e5e7eb'}}},
-    yAxis:[
-      {type:'value',name:'数量',axisLine:{show:false},splitLine:{lineStyle:{type:'dashed'}}},
-      {type:'value',name:'金额(元)',axisLine:{show:false},splitLine:{show:false}},
-    ],
+    yAxis:{type:'value',name:metric.unit,axisLine:{show:false},axisLabel:{formatter:v=>fmt(v)},splitLine:{lineStyle:{type:'dashed',color:'#e6ebf2'}}},
     series:[
-      {name:'雷鸟内容(本期)',type:'bar',data:newContent,itemStyle:{color:'#2563eb',borderRadius:[3,3,0,0]},barWidth:14},
-      {name:'雷鸟内容(上期)',type:'line',data:newContentPrev,smooth:true,symbol:'none',lineStyle:{type:'dashed',color:'#93c5fd'},yAxisIndex:0},
-      {name:'蓝链数(本期)',type:'line',data:blueLinks,smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#8b5cf6',width:2}},
-      {name:'雷鸟闪电令',type:'line',data:cp.map(d=>d.thunderbird_link_count||0),smooth:true,symbol:'diamond',symbolSize:5,lineStyle:{color:'#06b6d4',width:2}},
-      {name:'联盟佣金（非GMV）',type:'line',data:commission,smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#f59d22',width:2},yAxisIndex:1},
+      {name:`${metric.label}（本期）`,type:'line',data:currentValues,smooth:.28,symbol:'circle',symbolSize:6,lineStyle:{color:'#2563eb',width:3},areaStyle:{color:'rgba(37,99,235,.08)'},itemStyle:{color:'#2563eb'}},
+      {name:`${metric.label}（上期）`,type:'line',data:previousValues,smooth:.28,symbol:'none',lineStyle:{type:'dashed',color:'#9fbbe8',width:2}},
     ],
   };
-  // NOTE: 预留店铺流量曲线位 (shop traffic line to be added when data available)
   curveChartInstance.setOption(option);
   window.addEventListener('resize',()=>curveChartInstance&&curveChartInstance.resize());
   // Chart point click → drill into that date's content
@@ -844,8 +836,16 @@ function initCharts(){
 // ─── Data Loading ─────────────────────────────────────────────────────────────
 async function loadDailyData(period){
   const days=(period==='today'||period==='yesterday')?1:(parseInt(period)||7);
-  state.periodStart='';state.periodEnd='';
-  await loadDashboard(days);
+  if(state.latestAvailableDate){
+    const latest=new Date(`${state.latestAvailableDate}T00:00:00`);
+    const end=new Date(latest);end.setDate(end.getDate()-(period==='yesterday'?1:0));
+    const start=new Date(end);start.setDate(start.getDate()-days+1);
+    const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    await loadDashboard(days,iso(start),iso(end));
+  }else{
+    state.periodStart='';state.periodEnd='';
+    await loadDashboard(days);
+  }
 }
 
 async function loadDashboard(days,startDate='',endDate=''){
@@ -862,7 +862,7 @@ async function loadDashboard(days,startDate='',endDate=''){
       apiGet(`/brand-rankings?limit=20${join}`),
       apiGet('/action-plan')
     ]);
-    if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;}
+    if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;if(!state.latestAvailableDate)state.latestAvailableDate=kpis.period_end;}
     mergeState(kpis,null,null,daily,tasks,creators,brands,plan,thunderbirdCreators);
   }catch(err){console.error(err);alert(`数据加载失败：${err.message}`);}
   finally{hideLoading();}
