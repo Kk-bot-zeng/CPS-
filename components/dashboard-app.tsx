@@ -47,6 +47,7 @@ import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 import SalesWarningPage, { WarningPopup, acknowledgeWarnings, loadWarnings, type WarningPayload } from "@/components/sales-warning-page";
 
 type Page = "总览" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心";
+type ProductCategory = "tv" | "monitor";
 type Order = {
   sourceKey: string;
   orderNo: string;
@@ -189,6 +190,7 @@ export default function DashboardApp() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
+  const [category, setCategory] = useState<ProductCategory>("tv");
   const [warningData, setWarningData] = useState<WarningPayload | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
   const refreshWarnings = () => loadWarnings("all").then(setWarningData).catch(() => {});
@@ -236,6 +238,7 @@ export default function DashboardApp() {
       <main className="main-area">
         <header className="topbar">
           <div className="top-actions">
+            {page === "总览" && <BusinessSelect className="category-business-select" label="当前品类" value={category} onChange={(value) => setCategory(value as ProductCategory)} options={[{ value:"tv", label:"TV" }, { value:"monitor", label:"显示器" }]} />}
             <BusinessSelect className="channel-business-select" label="当前渠道" value={channel} onChange={(value) => setChannel(value as ChannelFilter)} options={[{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />
             <div className="global-search">
               <Search size={17} />
@@ -254,7 +257,7 @@ export default function DashboardApp() {
           </div>
         </header>
         <section className="content">
-          {page === "总览" && <RealOverview channel={channel} />}
+          {page === "总览" && (category === "tv" ? <RealOverview channel={channel} /> : <MonitorDashboard />)}
           {page === "达人/团长管理" && <ResourceManager channel={channel} />}
           {page === "数据导入" && (
             <ImportPage
@@ -272,6 +275,13 @@ export default function DashboardApp() {
       {!warningDismissed && warningData && <WarningPopup data={warningData} onView={viewWarnings} />}
     </div>
   );
+}
+
+function MonitorDashboard() {
+  return <div className="monitor-dashboard-shell">
+    <div className="monitor-dashboard-head"><div><h2>显示器 · CPS达人全链路操盘看板</h2><p>完整保留显示器原看板的数据口径、分析方式与下钻模式</p></div><span>数据截至 2026-08-13</span></div>
+    <iframe className="monitor-dashboard-frame" src="/monitor-dashboard/" title="显示器CPS达人全链路操盘看板" />
+  </div>;
 }
 
 function Overview({
