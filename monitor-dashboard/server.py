@@ -635,7 +635,7 @@ async def ai_generate(data: dict):
     if cp:
         parts.append("\n## 日度趋势:")
         for d in cp[-10:]:  # last 10 days
-            parts.append(f"- {d['date']}: 内容{d['new_content']}条，蓝链{d['total_blue_link_count']}个，雷鸟闪电令{d['thunderbird_link_count']}个，销量{d['sales_quantity']}单，佣金¥{_num(d.get('commission_amount', 0)):.0f}")
+            parts.append(f"- {d['date']}: 内容{d['new_content']}条，蓝链{d['total_blue_link_count']}个，雷鸟蓝链{d['thunderbird_link_count']}个，销量{d['sales_quantity']}单，佣金¥{_num(d.get('commission_amount', 0)):.0f}")
         
         if len(cp) == len(pp) and pp:
             total_cp_content = sum(_num(d.get("new_content", 0)) for d in cp)

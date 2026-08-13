@@ -753,8 +753,11 @@ function ImportPage({
     fetch(`/api/plan-whitelist?channel=jd&category=${category}`).then(r=>r.json()).then(x=>setPlanStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传京东计划白名单")).catch(()=>setPlanStatus("计划白名单读取失败"));
   }, [channel, category]);
   function downloadTemplate(kind: "plan" | "sku") {
-    const rows = kind === "plan" ? [{ "计划名称": "示例：雷鸟团长计划" }] : [{ "SKU": "100000000000", "推广名": "示例型号", "型号": "可选", "计入电视销量": "是" }];
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), kind === "plan" ? "计划白名单" : "SKU商品映射"); XLSX.writeFile(wb, kind === "plan" ? "京东计划白名单模板.xlsx" : "SKU商品映射模板.xlsx");
+    const isMonitor=category === "monitor";
+    const rows = kind === "plan" ? [{ "计划名称": isMonitor ? "示例：显示器推广计划" : "示例：TV推广计划" }] : isMonitor
+      ? [{ "SKU": "100000000000", "推广名": "示例：雷鸟显示器", "型号": "示例：Q8", "是否计入显示器销量": "是" }]
+      : [{ "SKU": "100000000000", "推广名": "示例：雷鸟电视", "型号": "示例：鹤系列", "是否计入TV销量": "是" }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), kind === "plan" ? "计划白名单" : `${isMonitor?"显示器":"TV"}SKU商品映射`); XLSX.writeFile(wb, kind === "plan" ? `${isMonitor?"显示器":"TV"}_京东计划白名单模板.xlsx` : `${isMonitor?"显示器":"TV"}_SKU商品映射模板.xlsx`);
   }
   async function loadPlans(file: File) { try { const rows=await parseSpreadsheet(file); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",category,fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
   useEffect(() => {
@@ -806,9 +809,10 @@ function ImportPage({
     try {
       const rows = await parseSpreadsheet(file, { preferredSheets: ["数据底表"] });
       const mappings = rows.map((r) => ({
-        promotionName: String(r["推广名"] ?? "").trim(),
-        modelName: String(r["型号名"] ?? "").trim(),
-        merchantCode: String(r["商品编码"] ?? "").trim(),
+        promotionName: String(r["推广名"] ?? r["商品名称"] ?? "").trim(),
+        modelName: String(r["型号"] ?? r["型号名"] ?? "").trim(),
+        merchantCode: String(r["SKU"] ?? r["商品编码"] ?? "").trim(),
+        countInSales: !["否","不计入","0","false"].includes(String(r["是否计入显示器销量"] ?? r["是否计入TV销量"] ?? r["计入电视销量"] ?? "是").trim().toLowerCase()),
       })).filter((r) => r.promotionName && r.merchantCode);
       const response = await fetch("/api/product-mappings", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, category, fileName: file.name, rows: mappings }) });
@@ -910,7 +914,7 @@ function ImportPage({
         <div>
           <b className="channel-rule-title">{channel === "jd" ? "京东 SKU 商品映射" : channel === "douyin" ? "抖音商品型号匹配表" : channel === "tmall" ? "天猫商品型号匹配表" : "请先在顶部选择渠道"}</b>
           <span>{mappingStatus}</span>
-          <small>读取“数据底表”的推广名、型号名、商品编码；上传新文件会覆盖当前版本。</small>
+          <small>读取SKU、推广名、型号及“是否计入{category === "monitor" ? "显示器" : "TV"}销量”；上传新文件会覆盖当前版本。</small>
         </div>
         <input ref={mappingInput} type="file" accept=".xlsx,.xls" hidden
           onChange={(e) => e.target.files?.[0] && loadMapping(e.target.files[0])} />

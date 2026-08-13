@@ -349,7 +349,7 @@ function renderTodayOverview(){
           </div>
           <div class="today-metric-card">
             <div class="label">2、蓝链变化</div>
-            <div class="desc">蓝链数 <strong>${fmt(lastDay.total_blue_link_count||0)}</strong>个<br>雷鸟闪电令 <strong>${fmt(lastDay.thunderbird_link_count||0)}</strong>个</div>
+            <div class="desc">蓝链数 <strong>${fmt(lastDay.total_blue_link_count||0)}</strong>个<br>雷鸟蓝链 <strong>${fmt(lastDay.thunderbird_link_count||0)}</strong>个</div>
           </div>
           <div class="today-metric-card">
             <div class="label">3、转化变化</div>
@@ -482,7 +482,7 @@ async function loadDrilldownData(key,val){
       </tr>`;}).join('');
     container.innerHTML=`<div class="detail-scroll"><table class="creator-detail-table">
           <thead><tr><th>#</th><th>标题</th><th>创作者</th><th class="num">播放</th><th class="num">互动</th>
-            <th class="num">蓝链</th><th class="num">闪电令</th><th>日期</th></tr></thead>
+            <th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th>日期</th></tr></thead>
           <tbody>${rows}</tbody></table></div>
       <p style="font-size:11px;color:var(--muted);margin-top:8px">共 ${data.length} 条记录，${brandLinkHtml||'无外部链接'}</p>`;
   }catch(err){
@@ -810,12 +810,16 @@ function initCharts(){
       }
     },
     legend:{data:[`${metric.label}（本期）`,`${metric.label}（上期）`],bottom:4,textStyle:{fontSize:11}},
-    grid:{top:36,bottom:36,left:58,right:26},
-    xAxis:{type:'category',data:labels,axisLine:{lineStyle:{color:'#e5e7eb'}}},
+    grid:{top:36,bottom:52,left:58,right:26},
+    xAxis:{type:'category',data:labels,axisLine:{lineStyle:{color:'#e5e7eb'}},axisLabel:{interval:0,margin:12,color:'#667085'}},
     yAxis:{type:'value',name:metric.unit,axisLine:{show:false},axisLabel:{formatter:v=>fmt(v)},splitLine:{lineStyle:{type:'dashed',color:'#e6ebf2'}}},
     series:[
-      {name:`${metric.label}（本期）`,type:'line',data:currentValues,smooth:.28,symbol:'circle',symbolSize:6,lineStyle:{color:'#2563eb',width:3},areaStyle:{color:'rgba(37,99,235,.08)'},itemStyle:{color:'#2563eb'}},
-      {name:`${metric.label}（上期）`,type:'line',data:previousValues,smooth:.28,symbol:'none',lineStyle:{type:'dashed',color:'#9fbbe8',width:2}},
+      cp.length===1
+        ? {name:`${metric.label}（本期）`,type:'bar',data:currentValues,barMaxWidth:58,itemStyle:{color:'#2563eb',borderRadius:[8,8,0,0]},label:{show:true,position:'top',formatter:p=>`${fmt(p.value)} ${metric.unit}`,color:'#1d4f9e',fontWeight:700}}
+        : {name:`${metric.label}（本期）`,type:'line',data:currentValues,smooth:.28,symbol:'circle',symbolSize:7,lineStyle:{color:'#2563eb',width:3},areaStyle:{color:'rgba(37,99,235,.08)'},itemStyle:{color:'#2563eb'}},
+      cp.length===1
+        ? {name:`${metric.label}（上期）`,type:'bar',data:previousValues,barMaxWidth:58,itemStyle:{color:'#b8c9e7',borderRadius:[8,8,0,0]},label:{show:true,position:'top',formatter:p=>`${fmt(p.value)} ${metric.unit}`,color:'#7a8da9'}}
+        : {name:`${metric.label}（上期）`,type:'line',data:previousValues,smooth:.28,symbol:'none',lineStyle:{type:'dashed',color:'#9fbbe8',width:2}},
     ],
   };
   curveChartInstance.setOption(option);
