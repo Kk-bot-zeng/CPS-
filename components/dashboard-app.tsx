@@ -194,8 +194,8 @@ export default function DashboardApp() {
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
   const [category, setCategory] = useState<ProductCategory>("tv");
-  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板";
-  const effectiveChannel: ChannelFilter = category === "monitor" && (page === "总览" || page === "数据导入") ? "jd" : channel;
+  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板" || page === "达人/团长管理";
+  const effectiveChannel: ChannelFilter = category === "monitor" && (page === "总览" || page === "数据导入" || page === "达人/团长管理") ? "jd" : channel;
   const [warningData, setWarningData] = useState<WarningPayload | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
   const refreshWarnings = () => loadWarnings("all").then(setWarningData).catch(() => {});
@@ -244,7 +244,7 @@ export default function DashboardApp() {
         <header className="topbar">
           <div className="top-actions">
             {categoryPage && <BusinessSelect className="category-business-select" label="当前品类" value={category} onChange={(value) => setCategory(value as ProductCategory)} options={[{ value:"tv", label:"TV" }, { value:"monitor", label:"显示器" }]} />}
-            {page !== "B站操盘看板" && <BusinessSelect className="channel-business-select" label="当前渠道" value={effectiveChannel} onChange={(value) => setChannel(value as ChannelFilter)} options={category === "monitor" && (page === "总览" || page === "数据导入") ? [{ value:"jd", label:"京东" }] : [{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />}
+            {page !== "B站操盘看板" && <BusinessSelect className="channel-business-select" label="当前渠道" value={effectiveChannel} onChange={(value) => setChannel(value as ChannelFilter)} options={category === "monitor" && (page === "总览" || page === "数据导入" || page === "达人/团长管理") ? [{ value:"jd", label:"京东" }] : [{ value:"all", label:"全部渠道" }, ...CHANNELS.map((c) => ({ value:c.code, label:c.name }))]} />}
             <div className="global-search">
               <Search size={17} />
               <input placeholder="搜索达人、团长或商品" />
@@ -266,7 +266,7 @@ export default function DashboardApp() {
           <div className="bilibili-page-host" hidden={page !== "B站操盘看板"}>
             <BilibiliDashboard category={category} />
           </div>
-          {page === "达人/团长管理" && <ResourceManager channel={channel} />}
+          {page === "达人/团长管理" && <ResourceManager channel={effectiveChannel} category={category} />}
           {page === "数据导入" && (
             <ImportPage
               channel={effectiveChannel}

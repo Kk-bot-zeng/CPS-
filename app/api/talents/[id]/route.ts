@@ -9,15 +9,18 @@ export async function PATCH(
   if (auth.error) return auth.error;
   const { id } = await params;
   const body = await request.json();
+  const category = body.product_category === "monitor" ? "monitor" : "tv";
+  if (category === "monitor" && body.platform !== "jd")
+    return NextResponse.json({ error: "显示器资源仅支持京东渠道" }, { status: 400 });
   if (!isChannel(body.platform))
     return NextResponse.json({ error: "请选择达人所属渠道" }, { status: 400 });
   if (body.leader_id) {
     const { data: leader } = await auth.admin
       .from("leaders")
-      .select("platform")
+      .select("platform,product_category")
       .eq("id", body.leader_id)
       .single();
-    if (!leader || leader.platform !== body.platform)
+    if (!leader || leader.platform !== body.platform || leader.product_category !== category)
       return NextResponse.json(
         { error: "达人和所属团长必须属于同一渠道" },
         { status: 409 },

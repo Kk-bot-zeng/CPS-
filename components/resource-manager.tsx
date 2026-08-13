@@ -32,17 +32,21 @@ type RecordRow = {
   address: string | null;
   cooperation_status: string;
   notes: string | null;
+  product_category?: "tv" | "monitor";
 };
-const blank = (channel: ChannelFilter): Partial<RecordRow> => ({
+const blank = (channel: ChannelFilter, category: "tv" | "monitor"): Partial<RecordRow> => ({
   kind: "达人",
   platform: channel === "all" ? null : channel,
   cooperation_status: "合作中",
+  product_category: category,
 });
 const PAGE_SIZE = 25;
 export default function ResourceManager({
   channel,
+  category,
 }: {
   channel: ChannelFilter;
+  category: "tv" | "monitor";
 }) {
   const [talents, setTalents] = useState<RecordRow[]>([]),
     [leaders, setLeaders] = useState<RecordRow[]>([]),
@@ -56,20 +60,20 @@ export default function ResourceManager({
   const input = useRef<HTMLInputElement>(null);
   async function load() {
     const [t, l] = await Promise.all([
-      fetch(`/api/talents?channel=${channel}`).then((r) => r.json()),
-      fetch(`/api/leaders?channel=${channel}`).then((r) => r.json()),
+      fetch(`/api/talents?channel=${channel}&category=${category}`).then((r) => r.json()),
+      fetch(`/api/leaders?channel=${channel}&category=${category}`).then((r) => r.json()),
     ]);
     setTalents(t.map((x: any) => ({ ...x, kind: "达人" })));
     setLeaders(l.map((x: any) => ({ ...x, kind: "团长" })));
   }
   useEffect(() => {
     void load();
-  }, [channel]);
+  }, [channel, category]);
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(q.trim().toLowerCase()), 180);
     return () => window.clearTimeout(timer);
   }, [q]);
-  useEffect(() => setPage(1), [channel, kind, search]);
+  useEffect(() => setPage(1), [channel, category, kind, search]);
   const rows = useMemo(
     () =>
       [...talents, ...leaders].filter(
@@ -98,7 +102,7 @@ export default function ResourceManager({
     const r = await fetch(url, {
       method: editing.id ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing),
+      body: JSON.stringify({ ...editing, product_category: category, platform: category === "monitor" ? "jd" : editing.platform }),
     });
     const j = await r.json();
     if (!r.ok) {
@@ -153,13 +157,19 @@ export default function ResourceManager({
         备注: "",
       },
     ];
+    if (category === "monitor") {
+      data.forEach((row) => {
+        row["渠道(京东/抖音/天猫)"] = "京东";
+        if (row["身份(达人/团长)"] === "达人") row["匹配ID/联盟ID"] = "请填写京东推客PIN/联盟ID";
+      });
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(data),
-      "达人团长模板",
+      category === "monitor" ? "显示器京东达人团长" : "TV达人团长模板",
     );
-    XLSX.writeFile(wb, "达人团长批量导入模板.xlsx");
+    XLSX.writeFile(wb, category === "monitor" ? "显示器_京东达人团长批量导入模板.xlsx" : "TV_达人团长批量导入模板.xlsx");
   }
   async function readFile(file: File) {
     const raw = await parseSpreadsheet(file);
@@ -167,7 +177,7 @@ export default function ResourceManager({
       raw.map((r) => ({
         type: r["身份(达人/团长)"],
         name: String(r["名称"]),
-        channel:
+        channel: category === "monitor" ? "jd" :
           ({ 京东: "jd", 抖音: "douyin", 天猫: "tmall" } as any)[
             String(r["渠道(京东/抖音/天猫)"] || "")
           ] || r["渠道(京东/抖音/天猫)"],
@@ -190,7 +200,7 @@ export default function ResourceManager({
     const r = await fetch("/api/resources/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rows: batch }),
+      body: JSON.stringify({ rows: batch, product_category: category }),
     });
     const j = await r.json();
     if (!r.ok) {
@@ -207,7 +217,7 @@ export default function ResourceManager({
         <div>
           <h2>
             达人/团长管理 ·{" "}
-            {channel === "all" ? "全部渠道" : channelName(channel)}
+            {category === "monitor" ? "显示器 · 京东" : `TV · ${channel === "all" ? "全部渠道" : channelName(channel)}`}
           </h2>
           <p>统一管理合作资源，新增时选择身份即可</p>
         </div>
@@ -222,7 +232,7 @@ export default function ResourceManager({
           </button>
           <button
             className="primary"
-            onClick={() => setEditing(blank(channel))}
+            onClick={() => setEditing(blank(category === "monitor" ? "jd" : channel, category))}
           >
             <Plus size={15} />
             新增资源
@@ -330,6 +340,7 @@ export default function ResourceManager({
           value={editing}
           leaders={leaders}
           setValue={setEditing}
+          category={category}
           close={() => setEditing(null)}
           save={save}
         />
@@ -350,12 +361,14 @@ function ResourceModal({
   setValue,
   close,
   save,
+  category,
 }: {
   value: Partial<RecordRow>;
   leaders: RecordRow[];
   setValue: (v: Partial<RecordRow>) => void;
   close: () => void;
   save: () => void;
+  category: "tv" | "monitor";
 }) {
   const set = (k: string, v: string) => setValue({ ...value, [k]: v });
   return (
@@ -381,10 +394,11 @@ function ResourceModal({
           <Field label="渠道*">
             <select
               value={value.platform || ""}
+              disabled={category === "monitor"}
               onChange={(e) => set("platform", e.target.value)}
             >
               <option value="">请选择</option>
-              {CHANNELS.map((c) => (
+              {(category === "monitor" ? CHANNELS.filter((c) => c.code === "jd") : CHANNELS).map((c) => (
                 <option value={c.code} key={c.code}>
                   {c.name}
                 </option>

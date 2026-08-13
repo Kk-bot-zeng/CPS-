@@ -9,14 +9,16 @@ export async function PATCH(
   if (auth.error) return auth.error;
   const { id } = await params;
   const body = await request.json();
+  if (body.product_category === "monitor" && body.platform !== "jd")
+    return NextResponse.json({ error: "显示器资源仅支持京东渠道" }, { status: 400 });
   if (!isChannel(body.platform))
     return NextResponse.json({ error: "请选择团长所属渠道" }, { status: 400 });
-  const { count } = await auth.admin
+  const { data: linkedTalents } = await auth.admin
     .from("talents")
-    .select("id", { count: "exact", head: true })
-    .eq("leader_id", id)
-    .neq("platform", body.platform);
-  if (count)
+    .select("platform,product_category")
+    .eq("leader_id", id);
+  const category = body.product_category === "monitor" ? "monitor" : "tv";
+  if ((linkedTalents || []).some((talent: { platform: string; product_category: string }) => talent.platform !== body.platform || talent.product_category !== category))
     return NextResponse.json(
       { error: "该团长名下存在其他渠道达人，请先调整达人归属" },
       { status: 409 },

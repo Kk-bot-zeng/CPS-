@@ -23,7 +23,9 @@ type Row = {
 export async function POST(request: Request) {
   const auth = await requireApiUser();
   if (auth.error) return auth.error;
-  const { rows } = (await request.json()) as { rows?: Row[] };
+  const body = (await request.json()) as { rows?: Row[]; product_category?: string };
+  const rows = body.rows;
+  const category = body.product_category === "monitor" ? "monitor" : "tv";
   if (!Array.isArray(rows) || !rows.length || rows.length > 1000)
     return NextResponse.json(
       { error: "每次请导入1至1000条数据" },
@@ -36,6 +38,8 @@ export async function POST(request: Request) {
     if (!r.name?.trim()) errors.push(`第${i + 2}行：名称不能为空`);
     if (!isChannel(r.channel))
       errors.push(`第${i + 2}行：渠道必须是京东、抖音或天猫`);
+    if (category === "monitor" && r.channel !== "jd")
+      errors.push(`第${i + 2}行：显示器资源仅支持京东渠道`);
   });
   if (errors.length)
     return NextResponse.json(
@@ -47,7 +51,8 @@ export async function POST(request: Request) {
   if (leaders.length) {
     const { data: existing } = await auth.admin
       .from("leaders")
-      .select("name,platform");
+      .select("name,platform,product_category")
+      .eq("product_category", category);
     const keys = new Set(
       (existing || []).map((x: { platform: string; name: string }) => `${x.platform}:${x.name}`),
     );
@@ -55,6 +60,7 @@ export async function POST(request: Request) {
       .filter((r) => !keys.has(`${r.channel}:${r.name!.trim()}`))
       .map((r) => ({
         name: r.name!.trim(),
+        product_category: category,
         contact_name: r.contact || null,
         phone: r.phone || null,
         wechat: r.wechat || null,
@@ -76,7 +82,8 @@ export async function POST(request: Request) {
   }
   const { data: leaderRows, error: leaderError } = await auth.admin
     .from("leaders")
-    .select("id,name,platform");
+    .select("id,name,platform")
+    .eq("product_category", category);
   if (leaderError)
     return NextResponse.json({ error: leaderError.message }, { status: 400 });
   const leaderMap = new Map(
@@ -98,6 +105,7 @@ export async function POST(request: Request) {
       );
     const payload = talents.map((r) => ({
       name: r.name!.trim(),
+      product_category: category,
       platform: r.channel,
       platform_account: r.account || null,
       match_id: r.matchId || null,
@@ -114,7 +122,7 @@ export async function POST(request: Request) {
     }));
     const { error } = await auth.admin
       .from("talents")
-      .upsert(payload, { onConflict: "platform,platform_account" });
+      .insert(payload);
     if (error)
       return NextResponse.json({ error: error.message }, { status: 400 });
   }

@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const q = params.get("q") || "";
   const channel = params.get("channel") || "all";
+  const category = params.get("category") === "monitor" ? "monitor" : "tv";
   if (channel !== "all" && !isChannel(channel))
     return NextResponse.json({ error: "无效渠道" }, { status: 400 });
   let query = auth.admin
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false });
   if (q) query = query.ilike("name", `%${q}%`);
   if (channel !== "all") query = query.eq("platform", channel);
+  query = query.eq("product_category", category);
   const { data, error } = await query;
   if (error)
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -28,6 +30,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "团长名称不能为空" }, { status: 400 });
   if (!isChannel(body.platform))
     return NextResponse.json({ error: "请选择团长所属渠道" }, { status: 400 });
+  if (body.product_category === "monitor" && body.platform !== "jd")
+    return NextResponse.json({ error: "显示器资源仅支持京东渠道" }, { status: 400 });
   const { data, error } = await auth.admin
     .from("leaders")
     .insert(clean(body))
@@ -40,6 +44,7 @@ export async function POST(request: Request) {
 function clean(b: Record<string, unknown>) {
   return {
     name: b.name,
+    product_category: b.product_category === "monitor" ? "monitor" : "tv",
     contact_name: b.contact_name || null,
     phone: b.phone || null,
     wechat: b.wechat || null,
