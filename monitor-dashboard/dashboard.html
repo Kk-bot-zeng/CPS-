@@ -1063,9 +1063,10 @@ function sendInvites(){
   const tasks=checked.map(x=>({creator_uid:x.dataset.uid,creator_name:x.dataset.name,message:buildOutreachMessage(x.dataset.name)}));
   if(tasks.some(x=>!x.creator_uid)){alert('部分达人缺少B站UID，请补齐后再生成任务。');return;}
   const payload={version:1,created_at:new Date().toISOString(),period_start:state.periodStart,period_end:state.periodEnd,tasks};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
-  const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`bilibili-outreach-${Date.now()}.json`;link.click();URL.revokeObjectURL(link.href);
-  alert(`已生成 ${tasks.length} 位达人的本地建联任务。请运行本地B站建联发送器，首次登录后可复用会话。`);
+  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  window.location.href=`cps-bilibili://send?payload=${encoded}`;
+  setTimeout(()=>alert(`已将 ${tasks.length} 位达人交给本机建联助手发送。助手会自动复用B站登录状态，并保存发送回执。`),500);
 }
 
 function importInvestmentData(){

@@ -7,16 +7,24 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
 const args = process.argv.slice(2);
-const sendMode = args.includes("--send");
+const protocolArg = args.find((value) => value.startsWith("cps-bilibili://"));
+const sendMode = Boolean(protocolArg) || args.includes("--send");
 const fileArg = args.find((value) => value.endsWith(".json"));
 const downloads = path.join(os.homedir(), "Downloads");
-const taskFile = fileArg || fs.readdirSync(downloads)
+const taskFile = protocolArg ? "" : fileArg || fs.readdirSync(downloads)
   .filter((name) => /^bilibili-outreach-\d+\.json$/.test(name))
   .map((name) => path.join(downloads, name))
   .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
-if (!taskFile) throw new Error("未找到建联任务文件，请先在系统中点击一键建联生成任务。");
+if (!protocolArg && !taskFile) throw new Error("未找到建联任务文件，请先在系统中点击一键建联生成任务。");
 
-const payload = JSON.parse(fs.readFileSync(taskFile, "utf8"));
+const payload = protocolArg
+  ? (() => {
+      const url = new URL(protocolArg);
+      const encoded = url.searchParams.get("payload") || "";
+      const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(Buffer.from(normalized, "base64").toString("utf8"));
+    })()
+  : JSON.parse(fs.readFileSync(taskFile, "utf8"));
 const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
 if (!tasks.length) throw new Error("任务文件没有达人数据。");
 const profile = path.join(os.homedir(), ".cps-bilibili-profile");
@@ -25,9 +33,9 @@ const page = context.pages()[0] || await context.newPage();
 await page.goto("https://message.bilibili.com/", { waitUntil: "domcontentloaded" });
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-console.log(`任务文件：${taskFile}\n达人数量：${tasks.length}\n模式：${sendMode ? "发送" : "仅预览"}`);
+console.log(`任务来源：${protocolArg ? "系统一键建联" : taskFile}\n达人数量：${tasks.length}\n模式：${sendMode ? "发送" : "仅预览"}`);
 console.log("请在打开的B站窗口确认已登录。脚本默认限速，每次发送间隔8-15秒，并保存回执。");
-if (sendMode) {
+if (sendMode && !protocolArg) {
   const answer = await rl.question("确认话术与达人后，输入 SEND 才会开始实际发送：");
   if (answer.trim() !== "SEND") { await context.close(); rl.close(); process.exit(0); }
 }
@@ -62,9 +70,9 @@ for (const [index, task] of tasks.entries()) {
   }
   results.push(result);
 }
-const receipt = path.join(path.dirname(taskFile), `bilibili-outreach-receipt-${Date.now()}.json`);
+const receipt = path.join(protocolArg ? downloads : path.dirname(taskFile), `bilibili-outreach-receipt-${Date.now()}.json`);
 fs.writeFileSync(receipt, JSON.stringify({ task_file: taskFile, send_mode: sendMode, results }, null, 2));
 console.log(`处理完成，回执：${receipt}`);
-await rl.question("按回车关闭浏览器...");
+if (!protocolArg) await rl.question("按回车关闭浏览器...");
 rl.close();
 await context.close();
