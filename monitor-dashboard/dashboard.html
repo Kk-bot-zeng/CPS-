@@ -213,6 +213,7 @@ const state = {
   aiAnalysis: '', aiFresh: '', autoAnalysis:null, analysisLoading:false,
   drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
   activeModule: 'platform', activeWB:'tabInvite', latestAvailableDate:'', activeMetrics:['content_count'], invitePage:1, churnPage:1, productPage:1,
+  moduleCache:{}, moduleLoading:'',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -239,7 +240,9 @@ function dateQuery(){
 // ─── Render App ───────────────────────────────────────────────────────────────
 function renderApp(){
   const app=$('#app');
-  const moduleContent=state.activeModule==='platform'
+  const moduleContent=state.moduleLoading===state.activeModule
+    ? `${renderModuleIntro(state.activeModule==='industry'?'行业分析':state.activeModule==='creator'?'达人工作台':'平台总览','正在载入所选日期范围的数据')}<section class="section"><div class="section-header"><h2>数据加载中...</h2></div><div style="height:220px;display:grid;place-items:center;color:var(--muted)"><span class="spinner" style="border-color:#dbeafe;border-top-color:var(--blue)"></span></div></section>`
+    : state.activeModule==='platform'
     ? `${renderModuleIntro('平台总览','查看平台整体内容、流量、蓝链与联盟转化表现')}${renderTodayOverview()}${renderKPISection()}`
     : state.activeModule==='industry'
       ? `${renderModuleIntro('行业分析','对比行业品牌的内容规模、播放表现与达人覆盖')}${renderContentAnalysis('industry')}`
@@ -294,13 +297,43 @@ function renderModuleIntro(title,desc){
   return `<div class="module-intro"><h1>${title}</h1><p>${desc}</p></div>`;
 }
 
-function switchDashboardModule(module){
+function periodCacheKey(module){return `${module}:${state.periodStart}:${state.periodEnd}`;}
+function applyModulePayload(module,payload){
+  if(!payload)return;
+  state.autoAnalysis=payload.analysis||state.autoAnalysis;
+  if(module==='platform'){state.todayTasks=payload.tasks||state.todayTasks;state.topCreators=payload.creators||state.topCreators;}
+  if(module==='industry'){state.brandRankings=payload.brands||state.brandRankings;state.creatorComparisons=payload.comparisons||state.creatorComparisons;state.thunderbirdCreators=payload.thunderbirdCreators||state.thunderbirdCreators;}
+  if(module==='creator'){state.actionPlan=payload.plan||state.actionPlan;state.creatorComparisons=payload.comparisons||state.creatorComparisons;}
+}
+async function fetchModulePayload(module,days,startDate,endDate){
+  const explicit=startDate&&endDate?`&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`:'';
+  const analysis=apiGet(`/auto-analysis?days=${days}&module=${module}${explicit}`);
+  if(module==='platform'){
+    const [a,tasks,creators]=await Promise.all([analysis,apiGet('/today-tasks'),apiGet(`/top-creators?limit=10${explicit}`)]);
+    return {analysis:a,tasks,creators};
+  }
+  if(module==='industry'){
+    const [a,brands,comparisons,thunderbirdCreators]=await Promise.all([analysis,apiGet(`/brand-rankings?limit=20${explicit}`),apiGet(`/creator-comparison?scope=all${explicit}`),apiGet(`/top-creators?limit=5000&scope=thunderbird${explicit}`)]);
+    return {analysis:a,brands,comparisons,thunderbirdCreators};
+  }
+  const [a,plan,comparisons]=await Promise.all([analysis,apiGet(`/action-plan?${explicit.slice(1)}`),apiGet(`/creator-comparison?scope=all${explicit}`)]);
+  return {analysis:a,plan,comparisons};
+}
+async function switchDashboardModule(module){
+  if(module===state.activeModule)return;
   state.activeModule=module;
   state.drillFilter=null;
+  const key=periodCacheKey(module),cached=state.moduleCache[key];
+  if(cached){applyModulePayload(module,cached);state.moduleLoading='';renderApp();window.scrollTo({top:0,behavior:'auto'});return;}
+  state.moduleLoading=module;
   renderApp();
   const days=(state.selectedPeriod==='today'||state.selectedPeriod==='yesterday')?1:(parseInt(state.selectedPeriod)||7);
-  loadDashboard(days,state.periodStart,state.periodEnd,true);
-  window.scrollTo({top:0,behavior:'smooth'});
+  try{
+    const payload=await fetchModulePayload(module,days,state.periodStart,state.periodEnd);
+    state.moduleCache[key]=payload;
+    if(state.activeModule===module){applyModulePayload(module,payload);state.moduleLoading='';renderApp();}
+  }catch(err){state.moduleLoading='';console.error(err);alert(`模块加载失败：${err.message}`);renderApp();}
+  window.scrollTo({top:0,behavior:'auto'});
 }
 
 // ─── A. Date Filter Banner ───────────────────────────────────────────────────
@@ -916,6 +949,7 @@ async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
   const requestId=++dashboardRequestId;
   if(!moduleOnly)showLoading('正在加载所选周期数据...');
   state.analysisLoading=true;
+  if(!moduleOnly)state.moduleCache={};
   try{
     const explicit=startDate&&endDate?`&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`:'';
     const join=explicit;
@@ -938,10 +972,25 @@ async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
     if(kpis&&kpis.period_start){state.periodStart=kpis.period_start;state.periodEnd=kpis.period_end;if(!state.latestAvailableDate)state.latestAvailableDate=kpis.period_end;}
     state.autoAnalysis=analysis;state.analysisLoading=false;
     mergeState(kpis,null,null,daily,tasks,creators,brands,plan,thunderbirdCreators,comparisons);
+    const payload={analysis};
+    if(state.activeModule==='platform')Object.assign(payload,{tasks,creators});
+    if(state.activeModule==='industry')Object.assign(payload,{brands,comparisons,thunderbirdCreators});
+    if(state.activeModule==='creator')Object.assign(payload,{plan,comparisons});
+    state.moduleCache[periodCacheKey(state.activeModule)]=payload;
   }catch(err){console.error(err);alert(`数据加载失败：${err.message}`);}
   finally{if(requestId===dashboardRequestId){state.analysisLoading=false;hideLoading();}}
   renderApp();
   updateFooter();
+  if(!moduleOnly){
+    const preload=()=>{
+      const modules=['platform','industry','creator'].filter(module=>module!==state.activeModule);
+      modules.forEach(async module=>{
+        const key=periodCacheKey(module);if(state.moduleCache[key])return;
+        try{state.moduleCache[key]=await fetchModulePayload(module,days,state.periodStart,state.periodEnd);}catch(err){console.debug('preload skipped',module,err);}
+      });
+    };
+    if('requestIdleCallback' in window)requestIdleCallback(preload,{timeout:1500});else setTimeout(preload,300);
+  }
 }
 
 function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan,thunderbirdCreators,comparisons){
@@ -1033,8 +1082,15 @@ document.addEventListener('DOMContentLoaded',()=>{loadDailyData('7');});
 
 // Let the host page own scrolling so this dashboard visually behaves like a
 // native system module instead of a nested framed application.
+let heightTimer=0,lastReportedHeight=0;
 function reportDashboardHeight(){
-  window.parent.postMessage({type:'monitor-dashboard-height',height:document.documentElement.scrollHeight},window.location.origin);
+  clearTimeout(heightTimer);
+  heightTimer=setTimeout(()=>{
+    const height=document.documentElement.scrollHeight;
+    if(Math.abs(height-lastReportedHeight)<4)return;
+    lastReportedHeight=height;
+    window.parent.postMessage({type:'monitor-dashboard-height',height},window.location.origin);
+  },80);
 }
 new ResizeObserver(reportDashboardHeight).observe(document.documentElement);
 window.addEventListener('load',reportDashboardHeight);
