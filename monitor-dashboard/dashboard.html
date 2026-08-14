@@ -213,7 +213,7 @@ const state = {
   aiAnalysis: '', aiFresh: '', autoAnalysis:null, analysisLoading:false,
   drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
   activeModule: 'platform', activeWB:'tabInvite', latestAvailableDate:'', activeMetrics:['content_count'], invitePage:1, churnPage:1, productPage:1,
-  moduleCache:{}, moduleLoading:'',
+  moduleCache:{}, moduleLoading:'', roiRows:[], roiTrackingDays:30, roiLoading:false,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -751,10 +751,13 @@ function renderCreatorWorkbench(){
     <tr>
       <td>${i+1}</td>
       <td>${d.creator_name||d.creator_or_pin||('达人'+(i+1))}</td>
-      <td style="font-size:11px;color:var(--muted)">${d.reason||'持续产出优质内容'}</td>
-      <td><span class="tag ${isHighRisk(d)?'tag-red':'tag-green'}">${isHighRisk(d)?'高风险':'优质达人'}</span></td>
-      <td style="font-size:11px;color:var(--green)">${d.recommended_action||'持续维护'}</td>
-    </tr>`);
+      <td class="num">${fmt(d.content_count||0)}</td>
+      <td class="num">${fmt(d.play_count||0)}</td>
+      <td class="num">${fmt(d.interaction_count||0)}</td>
+      <td class="num">${fmt(d.blue_link_count||0)}</td>
+      <td class="num">${fmt(d.thunderbird_link_count||0)}</td>
+      <td style="font-size:11px;color:var(--muted);min-width:260px">${d.recommendation_reason||d.reason||'历史合作表现稳定'}</td>
+    </tr>`).join('');
 
   // Policy Table
   const polRows=policy.map((d,i)=>`
@@ -763,7 +766,14 @@ function renderCreatorWorkbench(){
       <td>${d.creator_name||d.creator_or_pin||('达人'+(i+1))}</td>
       <td style="font-size:11px;color:var(--muted)">${d.reason||'-'}</td>
       <td style="font-size:11px;color:var(--purple)">${d.recommended_action||'评估ROI后倾斜'}</td>
-    </tr>`);
+    </tr>`).join('');
+
+  const roiRows=(state.roiRows||[]).map((d,i)=>`<tr>
+    <td>${i+1}</td><td><b>${d.creator_name}</b><div style="font-size:10px;color:var(--muted)">${d.period_start||'-'} ~ ${d.period_end||'-'}${d.match_status==='unmatched'?' · 未匹配内容/销售数据':''}</div></td>
+    <td class="num">${d.investment_amount==null?'<span class="metric-change flat">未填写</span>':'¥'+fmtY(d.investment_amount)}</td>
+    <td class="num">${fmt(d.content_count||0)}</td><td class="num">${fmt(d.play_count||0)}</td><td class="num">${fmt(d.interaction_count||0)}</td>
+    <td class="num">${fmt(d.blue_link_count||0)}</td><td class="num">${d.conversion_count==null?'-':fmt(d.conversion_count)}</td>
+    <td class="num"><b>${d.roi==null?'-':d.roi.toFixed(2)}</b></td></tr>`).join('');
 
   return `
   <section class="section">
@@ -818,8 +828,8 @@ function renderCreatorWorkbench(){
     <div class="workbench-panel ${state.activeWB==='tabHighValue'?'active':''}" id="tabHighValue">
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>#</th><th>达人</th><th>推荐理由</th><th>质量标签</th><th>建议动作</th></tr></thead>
-          <tbody>${hvRows||'<tr><td colspan="5" style="text-align:center;color:var(--muted)">暂无高价值达人数据</td></tr>'}</tbody>
+          <thead><tr><th>序号</th><th>达人昵称</th><th class="num">内容数量</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th>推荐理由</th></tr></thead>
+          <tbody>${hvRows||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">暂无高价值达人数据</td></tr>'}</tbody>
         </table>
       </div>
     </div>
@@ -827,20 +837,20 @@ function renderCreatorWorkbench(){
     <!-- Tab 4: 投放ROI分析 -->
     <div class="workbench-panel ${state.activeWB==='tabRoi'?'active':''}" id="tabRoi">
       <div class="invite-toolbar">
-        <button onclick="importInvestmentData()">&#128196; 导入费用明细</button>
-        <select id="roiPeriodSelect"><option value="30">30天</option><option value="60">60天</option><option value="90">90天</option></select>
+        <button onclick="importInvestmentData()">&#128196; 导入费用明细</button><input id="roiFileInput" type="file" accept=".xlsx" hidden onchange="uploadInvestmentData(this)">
+        <select id="roiPeriodSelect" onchange="loadRoiData(this.value)"><option value="30" ${state.roiTrackingDays===30?'selected':''}>30天</option><option value="60" ${state.roiTrackingDays===60?'selected':''}>60天</option><option value="90" ${state.roiTrackingDays===90?'selected':''}>90天</option></select>
         <span style="font-size:11px;color:var(--muted)">投后追踪周期</span>
       </div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>#</th><th>达人</th><th class="num">投放费用</th><th class="num">内容数</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">转化</th><th class="num">ROI</th></tr></thead>
-          <tbody><tr><td colspan="9" style="text-align:center;color:var(--muted)">请先导入达人投放费用明细</td></tr></tbody>
+          <thead><tr><th>#</th><th>达人</th><th class="num">投放费用</th><th class="num">内容数</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num" title="销售源当前只有达人累计归因，暂无按日拆分">转化（累计归因）</th><th class="num" title="累计归因佣金 ÷ 投放费用，仅作参考">参考ROI</th></tr></thead>
+          <tbody>${roiRows||`<tr><td colspan="9" style="text-align:center;color:var(--muted)">${state.roiLoading?'正在计算投后表现...':'请导入达人投放费用明细'}</td></tr>`}</tbody>
         </table>
       </div>
       <div class="roi-placeholder">
         <h4 style="margin-bottom:8px;color:var(--dark)">&#129302; AI推荐引擎</h4>
-        <p>基于历史ROI数据，智能推荐最优达人组合与投放策略</p>
-        <p style="color:var(--muted);font-style:italic;margin-top:8px">功能开发中...支持自动化计算与策略建议</p>
+        <p>内容、播放、互动与蓝链严格按投放后周期统计；转化使用当前销售源的达人累计归因。</p>
+        <p style="color:var(--muted);margin-top:8px">参考ROI = 累计归因佣金 ÷ 投放费用。投入金额为空或销售未匹配时不计算，避免产生误导结果。</p>
       </div>
     </div>
   </section>`;
@@ -865,6 +875,7 @@ function switchWBTab(el,tabId){
   el.classList.add('active');
   $$('.workbench-panel').forEach(p=>p.classList.remove('active'));
   $(`#${tabId}`).classList.add('active');
+  if(tabId==='tabRoi'&&!state.roiRows.length)loadRoiData(state.roiTrackingDays);
 }
 
 function toggleCheckAll(master){
@@ -1070,7 +1081,18 @@ function sendInvites(){
 }
 
 function importInvestmentData(){
-  alert('导入功能：请上传Excel格式的达人投放费用明细表。\n包含字段：达人名称、投放日期、费用金额、合作形式等。');
+  $('#roiFileInput')?.click();
+}
+async function loadRoiData(days=30){
+  state.roiTrackingDays=Number(days)||30;state.roiLoading=true;
+  try{const data=await apiGet(`/roi-analysis?tracking_days=${state.roiTrackingDays}`);state.roiRows=data.items||[];}
+  catch(e){alert('ROI数据读取失败：'+e.message);}finally{state.roiLoading=false;renderApp();}
+}
+async function uploadInvestmentData(input){
+  const file=input.files?.[0];if(!file)return;
+  const form=new FormData();form.append('file',file);showLoading('正在导入并匹配ROI数据...');
+  try{const r=await fetch(API+'/roi-import',{method:'POST',body:form});const data=await r.json();if(!r.ok)throw new Error(data.error||'导入失败');state.roiRows=data.analysis?.items||[];state.roiTrackingDays=30;alert(`成功导入 ${data.count} 条投入记录，已完成内容及销售数据匹配。`);renderApp();}
+  catch(e){alert('ROI导入失败：'+e.message);}finally{input.value='';hideLoading();}
 }
 
 function updateFooter(){

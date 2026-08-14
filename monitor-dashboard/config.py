@@ -8,6 +8,7 @@ REPORT_DATA_PATH = os.path.join(DATA_DIR, "report_data.json")
 CONTENT_FACTS_PATH = os.path.join(DATA_DIR, "normalized", "bilibili_content_facts.csv")
 LINK_FACTS_PATH = os.path.join(DATA_DIR, "normalized", "bilibili_link_facts.csv")
 TRAFFIC_FACTS_PATH = os.path.join(DATA_DIR, "normalized", "jdsz_traffic_source_daily.csv")
+ROI_DATA_PATH = os.path.join(DATA_DIR, "roi_investments.json")
 
 HOST = "127.0.0.1"
 PORT = 8090

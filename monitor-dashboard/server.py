@@ -11,11 +11,12 @@ from typing import Any, Optional
 from urllib.parse import unquote
 
 import httpx
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 import config
+from openpyxl import load_workbook
 
 app = FastAPI(title="CPS达人运营看板", version="2.0.0")
 
@@ -54,6 +55,49 @@ class DataLoader:
         self._content_cache_mtimes: tuple[float, float, float] | None = None
         self._traffic_cache: list[dict] = []
         self._traffic_mtime: float = -1
+
+    @staticmethod
+    def _investment_date(value: Any) -> Optional[date]:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        text = str(value or "").strip().replace("/", ".").replace("-", ".")
+        for fmt in ("%Y.%m.%d", "%Y.%m", "%Y"):
+            try:
+                return datetime.strptime(text, fmt).date()
+            except ValueError:
+                pass
+        return None
+
+    def get_roi_analysis(self, tracking_days: int = 30) -> dict:
+        investments = _load_json(config.ROI_DATA_PATH).get("items", [])
+        facts = self._content_catalog()
+        sales_by_name = {}
+        for row in self.get_report().get("creators", []) or []:
+            for name in str(row.get("bilibili_accounts") or row.get("creator_display") or "").split("/"):
+                if name.strip(): sales_by_name[name.strip()] = row
+        result = []
+        for index, item in enumerate(investments, 1):
+            name = str(item.get("creator_name") or "").strip()
+            start = self._investment_date(item.get("investment_date"))
+            end = start + timedelta(days=tracking_days - 1) if start else None
+            matched = [row for row in facts if row.get("creator_name") == name and start
+                and (row_date := self._date(row.get("date"))) and start <= row_date <= end]
+            sales = sales_by_name.get(name, {})
+            cost = item.get("investment_amount")
+            commission = _num(sales.get("commission_amount"))
+            result.append({**item, "index": index, "tracking_days": tracking_days,
+                "period_start": start.isoformat() if start else "", "period_end": end.isoformat() if end else "",
+                "content_count": len(matched),
+                "play_count": sum(int(_num(row.get("play_count"))) for row in matched),
+                "interaction_count": sum(int(_num(row.get("interaction_count"))) for row in matched),
+                "blue_link_count": sum(int(_num(row.get("blue_link_count"))) for row in matched),
+                "conversion_count": int(_num(sales.get("sales_quantity"))) if sales else None,
+                "attributed_commission": commission if sales else None,
+                "roi": round(commission / float(cost), 2) if sales and cost and float(cost) > 0 else None,
+                "match_status": "matched" if matched or sales else "unmatched"})
+        return {"items": result, "count": len(result), "tracking_days": tracking_days}
 
     def get_report(self) -> dict:
         try:
@@ -400,6 +444,26 @@ class DataLoader:
                 "thunderbird_link_count": thunderbird_link_count,
                 "recommendation_reason": "；".join(reasons[:3])})
         plan["待建联"] = sorted(pending_enriched, key=lambda item: (item["play_count"], item["content_count"]), reverse=True)
+        high_value_enriched = []
+        for row in plan["高价值基本盘"]:
+            uid = str(row.get("creator_uid") or row.get("creator_id") or "")
+            name = row.get("creator_name") or row.get("creator_or_pin") or row.get("name") or "未知达人"
+            metric = creators_by_id.get(uid) or creators_by_name.get(name) or {}
+            evidence = row.get("evidence") or {}
+            values = {key: int(_num(metric.get(key, evidence.get(key, 0)))) for key in
+                ("content_count", "play_count", "interaction_count", "blue_link_count", "thunderbird_link_count")}
+            reasons = []
+            if values["thunderbird_link_count"]:
+                reasons.append(f'周期内有{values["thunderbird_link_count"]}条雷鸟蓝链，合作基础稳定')
+            if values["play_count"]:
+                reasons.append(f'周期播放{values["play_count"] / 10000:.1f}万')
+            if values["content_count"]:
+                reasons.append(f'产出{values["content_count"]}条内容')
+            if not reasons:
+                reasons.append(row.get("reason") or "历史雷鸟蓝链贡献靠前，已建立基本盘")
+            high_value_enriched.append({**row, **metric, **values, "creator_uid": uid,
+                "creator_name": name, "recommendation_reason": "；".join(reasons)})
+        plan["高价值基本盘"] = high_value_enriched
         plan["counts"] = {k: len(v) for k, v in plan.items()}
         month_start = selected_end.replace(day=1)
         comparisons = self.get_creator_comparison(month_start.isoformat(), selected_end.isoformat())
@@ -818,11 +882,38 @@ def api_auto_analysis(days: int = Query(7, ge=1, le=60), start_date: Optional[st
 
 
 @app.get("/api/roi-analysis")
-def api_roi_analysis(invest_date_start: Optional[str] = None, invest_date_end: Optional[str] = None,
-                     creator_id: Optional[str] = None):
-    return {"status": "placeholder", "message": "ROI追踪功能开发中",
-            "params": {"invest_date_start": invest_date_start, "invest_date_end": invest_date_end,
-                       "creator_id": creator_id}}
+def api_roi_analysis(tracking_days: int = Query(30, ge=1, le=365)):
+    return loader.get_roi_analysis(tracking_days)
+
+
+@app.post("/api/roi-import")
+async def api_roi_import(file: UploadFile = File(...)):
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        return JSONResponse({"error": "仅支持.xlsx文件"}, status_code=400)
+    workbook = load_workbook(file.file, read_only=True, data_only=True)
+    sheet = workbook.active
+    # Some exported workbooks carry an incorrect A1-only worksheet dimension
+    # although their table/data extends across multiple columns and rows.
+    sheet.reset_dimensions()
+    headers = [str(cell.value or "").strip() for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    required = ["投入达人", "投放日期", "投入金额", "推客pin"]
+    if any(name not in headers for name in required):
+        return JSONResponse({"error": f"表头必须包含：{'、'.join(required)}"}, status_code=400)
+    positions = {name: headers.index(name) for name in required}
+    items = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        name = str(row[positions["投入达人"]] or "").strip()
+        if not name: continue
+        raw_date = row[positions["投放日期"]]
+        parsed = loader._investment_date(raw_date)
+        amount = row[positions["投入金额"]]
+        pins = [part.strip() for part in str(row[positions["推客pin"]] or "").splitlines() if part.strip()]
+        items.append({"creator_name": name, "investment_date": parsed.isoformat() if parsed else str(raw_date or ""),
+            "investment_amount": float(amount) if isinstance(amount, (int, float)) else None, "promoter_pins": pins})
+    os.makedirs(os.path.dirname(config.ROI_DATA_PATH), exist_ok=True)
+    with open(config.ROI_DATA_PATH, "w", encoding="utf-8") as handle:
+        json.dump({"source_file": file.filename, "imported_at": datetime.now().isoformat(), "items": items}, handle, ensure_ascii=False, indent=2)
+    return {"success": True, "count": len(items), "analysis": loader.get_roi_analysis(30)}
 
 
 @app.post("/api/ai-generate")
