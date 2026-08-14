@@ -366,8 +366,41 @@ class DataLoader:
                 kv[f"other_{n}"] = v
         plan = {"待建联": kv.get("pending", []), "流失预警": kv.get("churn", r.get("creator_churn", [])),
                 "高价值基本盘": kv.get("highval", []), "政策倾斜建议": kv.get("policy", [])}
+        selected_start, selected_end = self._resolve_period(start_date, end_date)
+        selected_comparisons = self.get_creator_comparison(selected_start.isoformat(), selected_end.isoformat())
+        creators_by_id = {str(row.get("creator_id") or ""): row for row in selected_comparisons if row.get("creator_id")}
+        creators_by_name = {row["creator_name"]: row for row in selected_comparisons}
+        pending_enriched = []
+        for row in plan["待建联"]:
+            uid = str(row.get("creator_uid") or row.get("creator_id") or "")
+            name = row.get("creator_name") or row.get("creator_or_pin") or row.get("name") or "未知达人"
+            metric = creators_by_id.get(uid) or creators_by_name.get(name) or {}
+            evidence = row.get("evidence") or {}
+            content_count = int(_num(metric.get("content_count", evidence.get("content_count", 0))))
+            play_count = int(_num(metric.get("play_count", evidence.get("play_count", 0))))
+            interaction_count = int(_num(metric.get("interaction_count", evidence.get("interaction_count", 0))))
+            blue_link_count = int(_num(metric.get("blue_link_count", evidence.get("blue_link_count", 0))))
+            thunderbird_link_count = int(_num(metric.get("thunderbird_link_count", evidence.get("thunderbird_link_count", 0))))
+            reasons = []
+            if play_count >= 1_000_000:
+                reasons.append(f"周期播放{play_count / 10000:.1f}万，属于高流量达人")
+            elif play_count:
+                reasons.append(f"周期播放{play_count / 10000:.1f}万，具备内容触达能力")
+            if content_count >= 10:
+                reasons.append(f"产出稳定（{content_count}条内容）")
+            if blue_link_count and not thunderbird_link_count:
+                reasons.append(f"已有{blue_link_count}条竞品/行业蓝链，但暂无雷鸟蓝链")
+            elif thunderbird_link_count:
+                reasons.append(f"已有{thunderbird_link_count}条雷鸟蓝链，可进一步深化合作")
+            if not reasons:
+                reasons.append(row.get("reason") or "行业相关达人，建议补充建联并持续观察")
+            pending_enriched.append({**row, **metric, "creator_uid": uid, "creator_name": name,
+                "content_count": content_count, "play_count": play_count,
+                "interaction_count": interaction_count, "blue_link_count": blue_link_count,
+                "thunderbird_link_count": thunderbird_link_count,
+                "recommendation_reason": "；".join(reasons[:3])})
+        plan["待建联"] = sorted(pending_enriched, key=lambda item: (item["play_count"], item["content_count"]), reverse=True)
         plan["counts"] = {k: len(v) for k, v in plan.items()}
-        _, selected_end = self._resolve_period(start_date, end_date)
         month_start = selected_end.replace(day=1)
         comparisons = self.get_creator_comparison(month_start.isoformat(), selected_end.isoformat())
         by_name = {row["creator_name"]: row for row in comparisons}

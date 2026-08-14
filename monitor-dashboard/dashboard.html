@@ -721,9 +721,13 @@ function renderCreatorWorkbench(){
     <tr>
       <td><input type="checkbox" class="item-check" checked data-uid="${d.creator_uid||d.creator_id||''}" data-name="${String(d.creator_name||d.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"></td>
       <td>${(state.invitePage-1)*pageSize+i+1}</td>
-      <td>${d.recommended_action||'优先建联'}</td>
       <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(d.creator_name||d.name||'')}')">${d.creator_name||d.name||d.creator_or_pin||('达人'+(i+1))}</a></td>
-      <td style="font-size:11px;color:var(--muted)">${d.reason||d.recommended_action||'-'}</td>
+      <td class="num">${fmt(d.content_count||0)}</td>
+      <td class="num">${fmt(d.play_count||0)}</td>
+      <td class="num">${fmt(d.interaction_count||0)}</td>
+      <td class="num">${fmt(d.blue_link_count||0)}</td>
+      <td class="num">${fmt(d.thunderbird_link_count||0)}</td>
+      <td style="font-size:11px;color:var(--muted);min-width:260px">${d.recommendation_reason||d.reason||'行业相关达人，建议优先建联'}</td>
     </tr>`).join('');
 
   // Churn Warning Table
@@ -792,8 +796,8 @@ function renderCreatorWorkbench(){
       </div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th style="width:30px"></th><th>序号</th><th>推荐原因</th><th>达人昵称</th><th>推荐理由</th></tr></thead>
-          <tbody>${inviteRows||'<tr><td colspan="5" style="text-align:center;color:var(--muted)">暂无待建联达人</td></tr>'}</tbody>
+          <thead><tr><th style="width:30px"></th><th>序号</th><th>达人昵称</th><th>内容数量</th><th>播放</th><th>互动</th><th>蓝链</th><th>雷鸟蓝链</th><th>推荐理由</th></tr></thead>
+          <tbody>${inviteRows||'<tr><td colspan="9" style="text-align:center;color:var(--muted)">暂无待建联达人</td></tr>'}</tbody>
         </table>
       </div>
       ${pager('invitePage',state.invitePage,pending.length,pageSize)}
