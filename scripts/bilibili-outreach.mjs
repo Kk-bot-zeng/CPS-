@@ -43,11 +43,16 @@ for (const [index, task] of tasks.entries()) {
     await page.waitForTimeout(1800);
     console.log(`[${index + 1}/${tasks.length}] ${task.creator_name} (${uid})\n${message}`);
     if (sendMode) {
-      const editor = page.locator("textarea, [contenteditable='true']").last();
+      // Bilibili currently renders the composer as a focusable div rather than
+      // a textarea/contenteditable element, so fill() is not compatible.
+      const editor = page.locator(".msb-textarea, [class*='MessageSendBox__Textarea']").last();
       await editor.waitFor({ state: "visible", timeout: 12000 });
-      await editor.fill(message);
-      const send = page.getByRole("button", { name: /发送/ }).last();
+      await editor.click();
+      await page.keyboard.press("Control+A");
+      await page.keyboard.insertText(message);
+      const send = page.getByText("发送", { exact: true }).last();
       await send.click();
+      await page.getByText(message, { exact: true }).last().waitFor({ state: "visible", timeout: 12000 });
       result.status = "sent";
       await page.waitForTimeout(8000 + Math.floor(Math.random() * 7000));
     }
