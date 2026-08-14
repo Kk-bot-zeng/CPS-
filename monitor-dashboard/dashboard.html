@@ -278,11 +278,12 @@ function renderAutoAnalysis(){
     const counts=a.counts||{};
     return `<section class="auto-analysis"><div class="auto-analysis-head"><h2>${a.title}</h2><span>${a.period_start} ~ ${a.period_end}</span></div><div class="auto-analysis-grid"><div><b>达人运营状态</b><ul class="analysis-list">${Object.entries(counts).map(([k,v])=>`<li>${k}：${v}位</li>`).join('')}</ul></div><div><b>建议动作</b><ul class="analysis-list">${(a.actions||[]).map(x=>`<li>${x}</li>`).join('')||'<li>当前暂无需优先处理的达人动作。</li>'}</ul></div></div><div class="analysis-note">${a.quality_note||''}</div></section>`;
   }
-  const correlations=(a.correlations||[]).map(item=>{
+  const correlationRow=item=>{
     const value=item.value;
     const width=value==null?0:Math.min(100,Math.abs(value)*100);
     return `<div class="correlation-row"><span>${item.label}</span><div class="correlation-track"><div class="correlation-bar ${value<0?'negative':''}" style="width:${width}%"></div></div><b>${value==null?'数据不足':value}</b></div>`;
-  }).join('');
+  };
+  const correlations=['店铺流量','京东联盟订单'].map(group=>`<div class="correlation-group"><b>${group}相关性</b>${(a.correlations||[]).filter(item=>item.group===group).map(correlationRow).join('')}</div>`).join('');
   return `<section class="auto-analysis">
     <div class="auto-analysis-head"><h2>${a.title||'AI 自动经营分析'}</h2><span>${a.period_start} ~ ${a.period_end} · ${a.sample_days}个有效数据日</span></div>
     <div class="auto-analysis-grid">
@@ -741,6 +742,8 @@ function renderCreatorWorkbench(){
       <td class="num">${ready?pctText(d.play_count_change_pct):'<span class="metric-change flat">暂无可比数据</span>'}</td>
       <td class="num metric-pair"><b>${ready?`${fmt(links)} / ${fmt(prevLinks)}`:'未匹配B站达人'}</b></td>
       <td class="num">${ready?pctText(d.blue_link_count_change_pct):'<span class="metric-change flat">暂无可比数据</span>'}</td>
+      <td class="num metric-pair"><b>${d.current_sales!=null?`${fmt(d.current_sales)} / ${fmt(d.previous_sales||0)}`:'暂无销售归因'}</b></td>
+      <td class="num">${d.sales_change_pct!=null?pctText(d.sales_change_pct):'<span class="metric-change flat">暂无可比数据</span>'}</td>
       <td><span class="tag tag-red">&#9888; ${d.status||'预警'}</span></td>
       <td style="font-size:11px">${d.recommended_action||'定向触达/调整政策'}</td>
     </tr>`;
@@ -817,8 +820,8 @@ function renderCreatorWorkbench(){
     <div class="workbench-panel ${state.activeWB==='tabChurn'?'active':''}" id="tabChurn">
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>#</th><th>达人昵称</th><th>本月播放/上月播放</th><th>播放同比</th><th>本月蓝链/上月蓝链</th><th>蓝链同比</th><th>状态</th><th>建议动作</th></tr></thead>
-          <tbody>${churnRows||'<tr><td colspan="8" style="text-align:center;color:var(--muted)">暂无流失预警达人</td></tr>'}</tbody>
+          <thead><tr><th>#</th><th>达人昵称</th><th>本期播放/上期播放</th><th>播放同比</th><th>本期蓝链/上期蓝链</th><th>蓝链同比</th><th>本月销量/上月销量</th><th>销量同比</th><th>状态</th><th>建议动作</th></tr></thead>
+          <tbody>${churnRows||'<tr><td colspan="10" style="text-align:center;color:var(--muted)">暂无流失预警达人</td></tr>'}</tbody>
         </table>
       </div>
       ${pager('churnPage',state.churnPage,churn.length,pageSize)}

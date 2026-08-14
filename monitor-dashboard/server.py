@@ -414,10 +414,18 @@ class DataLoader:
         selected_comparisons = self.get_creator_comparison(selected_start.isoformat(), selected_end.isoformat())
         creators_by_id = {str(row.get("creator_id") or ""): row for row in selected_comparisons if row.get("creator_id")}
         creators_by_name = {row["creator_name"]: row for row in selected_comparisons}
+        library = self.get_report().get("creator_library", []) or []
+        library_by_id = {str(row.get("author_uid") or ""): row for row in library if row.get("author_uid")}
+        library_by_name = {str(row.get("author_name") or "").strip(): row for row in library if row.get("author_name")}
         pending_enriched = []
         for row in plan["待建联"]:
             uid = str(row.get("creator_uid") or row.get("creator_id") or "")
             name = row.get("creator_name") or row.get("creator_or_pin") or row.get("name") or "未知达人"
+            identity = library_by_id.get(uid) or library_by_name.get(name) or {}
+            # A promoter PIN means the creator is already linked. The outreach
+            # queue is exclusively for creators without any PIN mapping.
+            if identity.get("promoter_pins"):
+                continue
             metric = creators_by_id.get(uid) or creators_by_name.get(name) or {}
             evidence = row.get("evidence") or {}
             content_count = int(_num(metric.get("content_count", evidence.get("content_count", 0))))
@@ -464,19 +472,51 @@ class DataLoader:
             high_value_enriched.append({**row, **metric, **values, "creator_uid": uid,
                 "creator_name": name, "recommendation_reason": "；".join(reasons)})
         plan["高价值基本盘"] = high_value_enriched
+        sales_changes = {}
+        for row in self.get_report().get("creator_churn", []) or []:
+            name = str(row.get("creator_or_pin") or "").strip()
+            current_sales, previous_sales = _num(row.get("current_sales")), _num(row.get("previous_sales"))
+            sales_changes[name] = {"current_sales": int(current_sales), "previous_sales": int(previous_sales),
+                "sales_change_pct": self._change_pct(current_sales, previous_sales)}
+
+        churn, positive = [], []
+        for metric in selected_comparisons:
+            name = metric.get("creator_name") or "未知达人"
+            identity = library_by_id.get(str(metric.get("creator_id") or "")) or library_by_name.get(name) or {}
+            if not identity.get("promoter_pins"):
+                continue
+            sales = sales_changes.get(name, {})
+            changes = {"播放": metric.get("play_count_change_pct"), "蓝链": metric.get("blue_link_count_change_pct"),
+                       "销量": sales.get("sales_change_pct")}
+            declines = [label for label, value in changes.items() if value is not None and value < 0]
+            rises = [label for label, value in changes.items() if value is not None and value > 0]
+            item = {**metric, **sales, "creator_name": name, "metric_data_status": "ready",
+                    "status": "、".join(f"{label}下降" for label in declines) if declines else "表现增长",
+                    "recommended_action": "针对下降指标复盘内容、挂链和销售承接" if declines else "持续维护并放大增长指标"}
+            # Growth takes precedence for mixed movements: a creator with a
+            # rising play/link/sales signal belongs in the value base rather
+            # than appearing simultaneously as churn risk.
+            if rises:
+                reasons = [f'{label}同比上升{changes[label]:.1f}%' for label in rises]
+                positive.append({**item, "recommendation_reason": "；".join(reasons)})
+            elif declines:
+                churn.append(item)
+        plan["流失预警"] = sorted(churn, key=lambda item: min(
+            [value for value in (item.get("play_count_change_pct"), item.get("blue_link_count_change_pct"), item.get("sales_change_pct")) if value is not None] or [0]))
+        churn_ids = {str(row.get("creator_id") or "") for row in churn if row.get("creator_id")}
+        churn_names = {row.get("creator_name") for row in churn}
+        plan["高价值基本盘"] = [row for row in plan["高价值基本盘"]
+            if str(row.get("creator_uid") or row.get("creator_id") or "") not in churn_ids
+            and row.get("creator_name") not in churn_names]
+        positive_by_id = {str(row.get("creator_id") or ""): row for row in positive if row.get("creator_id")}
+        positive_by_name = {row.get("creator_name"): row for row in positive}
+        plan["高价值基本盘"] = [{**row, **(positive_by_id.get(str(row.get("creator_uid") or row.get("creator_id") or ""))
+            or positive_by_name.get(row.get("creator_name")) or {})} for row in plan["高价值基本盘"]]
+        existing_ids = {str(row.get("creator_uid") or row.get("creator_id") or "") for row in plan["高价值基本盘"]}
+        existing_names = {row.get("creator_name") for row in plan["高价值基本盘"]}
+        plan["高价值基本盘"].extend(row for row in positive
+            if str(row.get("creator_id") or "") not in existing_ids and row.get("creator_name") not in existing_names)
         plan["counts"] = {k: len(v) for k, v in plan.items()}
-        month_start = selected_end.replace(day=1)
-        comparisons = self.get_creator_comparison(month_start.isoformat(), selected_end.isoformat())
-        by_name = {row["creator_name"]: row for row in comparisons}
-        enriched = []
-        for row in plan["流失预警"]:
-            name = row.get("creator_name") or row.get("creator_or_pin") or row.get("name") or "未知达人"
-            metric = by_name.get(name, {})
-            enriched.append({**row, **metric, "creator_name": name,
-                "metric_data_status": "ready" if metric else "unmatched",
-                "status": row.get("status") or (row.get("evidence") or {}).get("status") or "预警",
-                "recommended_action": row.get("recommended_action") or "针对流失达人定向触达或调整政策"})
-        plan["流失预警"] = enriched
         return plan
 
     def get_today_tasks(self) -> dict:
@@ -654,12 +694,16 @@ class DataLoader:
         previous_totals = {name: self._sum(previous, key) for name, key in metric_keys.items()}
         changes = {name: (round((value - previous_totals[name]) / abs(previous_totals[name]) * 100, 2)
                           if previous_totals[name] else None) for name, value in totals.items()}
-        pairs = [("内容数与播放量", "new_content", "play_count"),
-                 ("播放量与蓝链数", "play_count", "total_blue_link_count"),
-                 ("蓝链数与联盟订单", "total_blue_link_count", "sales_quantity"),
-                 ("店铺流量与联盟订单", "total_visitors", "sales_quantity"),
-                 ("联盟订单与联盟佣金", "sales_quantity", "commission_amount")]
-        correlations = [{"label": label, "value": self._correlation(current, left, right)} for label, left, right in pairs]
+        correlation_rows = [{**row, "store_traffic": _num(row.get("search_visitors")) + _num(row.get("outdoor_visitors"))}
+                            for row in current]
+        pairs = [("内容数与店铺流量", "new_content", "store_traffic", "店铺流量"),
+                 ("蓝链数与店铺流量", "total_blue_link_count", "store_traffic", "店铺流量"),
+                 ("播放量与店铺流量", "play_count", "store_traffic", "店铺流量"),
+                 ("内容数与京东联盟订单", "new_content", "sales_quantity", "京东联盟订单"),
+                 ("蓝链数与京东联盟订单", "total_blue_link_count", "sales_quantity", "京东联盟订单"),
+                 ("播放量与京东联盟订单", "play_count", "sales_quantity", "京东联盟订单")]
+        correlations = [{"label": label, "value": self._correlation(correlation_rows, left, right), "group": group}
+                        for label, left, right, group in pairs]
         valid = sorted((item for item in correlations if item["value"] is not None),
                        key=lambda item: abs(item["value"]), reverse=True)
         findings = []
@@ -680,7 +724,7 @@ class DataLoader:
         return {"period_start": start.isoformat(), "period_end": end.isoformat(), "sample_days": len(current),
                 "totals": totals, "changes": changes, "correlations": correlations,
                 "findings": findings[:5], "recommendations": recommendations[:3],
-                "quality_note": "相关性用于发现联动关系，不等同于因果结论；少于3个有效数据日时不计算。"}
+                "quality_note": "相关性按所选周期逐日计算；店铺流量=搜索流量+站外流量。相关性不等同于因果结论，少于3个有效数据日时不计算。"}
 
     @staticmethod
     def _content_direction(titles: list[str]) -> str:
