@@ -89,11 +89,11 @@ def load_mappings():
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor() as cur:
-            cur.execute("select i.plan_name from plan_whitelist_items i join plan_whitelist_uploads u on u.id=i.upload_id where u.channel='jd' and u.active=true and i.enabled=true")
+            cur.execute("select i.plan_name from plan_whitelist_items i join plan_whitelist_uploads u on u.id=i.upload_id where u.channel='jd' and u.product_category='tv' and u.active=true and i.enabled=true")
             plans = {row[0] for row in cur.fetchall()}
-            cur.execute("select m.merchant_code,m.promotion_name from product_mappings m join product_mapping_uploads u on u.id=m.upload_id where u.channel='jd' and u.active=true and m.count_in_sales=true")
+            cur.execute("select m.merchant_code,m.promotion_name from product_mappings m join product_mapping_uploads u on u.id=m.upload_id where u.channel='jd' and u.product_category='tv' and u.active=true and m.count_in_sales=true")
             skus = {str(code): name for code,name in cur.fetchall() if str(code) not in EXCLUDED_SKUS}
-            cur.execute("select match_id,name from leaders where platform='jd' and match_id is not null union select match_id,name from talents where platform='jd' and match_id is not null")
+            cur.execute("select match_id,name from leaders where platform='jd' and product_category='tv' and match_id is not null union select match_id,name from talents where platform='jd' and product_category='tv' and match_id is not null")
             alliances = {str(match_id): name for match_id,name in cur.fetchall()}
     finally: conn.close()
     if not plans: raise RuntimeError("请先在数据导入 > 京东上传计划白名单")
@@ -147,10 +147,10 @@ def import_rows(files):
             job_id = str(uuid.uuid4())
             # Keep all previously matched dates. Repeated recent orders are updated by source_key;
             # unmatched rows are never inserted and therefore never occupy historical storage.
-            cur.execute("insert into import_jobs(id,channel,file_name,status,total_rows,created_at) values(%s,'jd',%s,'processing',%s,now())", (job_id, "京东双店自动同步", len(all_rows)))
-            sql = """insert into orders(platform,source_key,order_no,external_product_id,merchant_code,quantity,paid_at,order_status,payable_amount,talent_name_raw,is_talent,product_name_raw,model_name,import_job_id,source_payload,updated_at)
-              values(%(platform)s,%(source_key)s,%(order_no)s,%(external_product_id)s,%(merchant_code)s,%(quantity)s,%(paid_at)s,%(order_status)s,%(payable_amount)s,%(talent_name_raw)s,%(is_talent)s,%(product_name_raw)s,%(model_name)s,%(import_job_id)s,%(source_payload)s,now())
-              on conflict(platform,source_key) do update set quantity=excluded.quantity,paid_at=excluded.paid_at,order_status=excluded.order_status,payable_amount=excluded.payable_amount,talent_name_raw=excluded.talent_name_raw,is_talent=excluded.is_talent,product_name_raw=excluded.product_name_raw,model_name=excluded.model_name,import_job_id=excluded.import_job_id,source_payload=excluded.source_payload,updated_at=now()"""
+            cur.execute("insert into import_jobs(id,channel,product_category,file_name,status,total_rows,created_at) values(%s,'jd','tv',%s,'processing',%s,now())", (job_id, "京东双店自动同步", len(all_rows)))
+            sql = """insert into orders(product_category,platform,source_key,order_no,external_product_id,merchant_code,quantity,paid_at,order_status,payable_amount,talent_name_raw,is_talent,product_name_raw,model_name,import_job_id,source_payload,updated_at)
+              values('tv',%(platform)s,%(source_key)s,%(order_no)s,%(external_product_id)s,%(merchant_code)s,%(quantity)s,%(paid_at)s,%(order_status)s,%(payable_amount)s,%(talent_name_raw)s,%(is_talent)s,%(product_name_raw)s,%(model_name)s,%(import_job_id)s,%(source_payload)s,now())
+              on conflict(product_category,platform,source_key) do update set quantity=excluded.quantity,paid_at=excluded.paid_at,order_status=excluded.order_status,payable_amount=excluded.payable_amount,talent_name_raw=excluded.talent_name_raw,is_talent=excluded.is_talent,product_name_raw=excluded.product_name_raw,model_name=excluded.model_name,import_job_id=excluded.import_job_id,source_payload=excluded.source_payload,updated_at=now()"""
             for row in all_rows: row["import_job_id"] = job_id; cur.execute(sql, row)
             # The JD export is an authoritative 30-day snapshot of effective orders. An order
             # that was imported earlier but later refunded disappears from this snapshot, so
@@ -160,7 +160,7 @@ def import_rows(files):
                 if not snapshot_keys:
                     raise RuntimeError(f"{store} 有效订单快照为空，已停止排退以保护历史数据")
                 cur.execute("""delete from orders
-                    where platform='jd' and paid_at >= %s and source_key like %s
+                    where product_category='tv' and platform='jd' and paid_at >= %s and source_key like %s
                       and not (source_key = any(%s))""",
                     (cutoff, f"{store}:%", list(snapshot_keys)))
                 stats["refunded"] += cur.rowcount
