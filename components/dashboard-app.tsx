@@ -225,7 +225,10 @@ export default function DashboardApp() {
             <button
               key={label}
               className={page === label ? "active" : ""}
-              onClick={() => setPage(label)}
+              onClick={() => {
+                setPage(label);
+                if (label === "B站操盘看板") setCategory("monitor");
+              }}
             >
               <Icon size={19} />
               {!collapsed && <span>{label}</span>}

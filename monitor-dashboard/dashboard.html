@@ -262,13 +262,26 @@ function renderAutoAnalysis(){
   const a=state.autoAnalysis;
   if(state.analysisLoading&&!a)return `<section class="auto-analysis"><div class="auto-analysis-head"><h2>AI 自动经营分析</h2><span>正在根据所选周期计算...</span></div></section>`;
   if(!a)return '';
+  if(a.module==='industry'){
+    const brands=(a.brand_drivers||[]).map(x=>`<tr><td>${x.brand_name}</td><td>${fmt(x.content_count)}</td><td>${fmt(x.creator_count)}</td><td>${fmt(x.avg_play)}</td><td><span class="tag tag-blue">${x.growth_driver}</span></td></tr>`).join('');
+    const creators=(a.top_creators||[]).map(x=>`<tr><td>${x.creator_name}</td><td>${fmt(x.play_count)}</td><td>${x.content_direction}</td><td><span class="tag ${x.cooperation_status==='已建联合作'?'tag-green':'tag-orange'}">${x.cooperation_status}</span></td></tr>`).join('');
+    const own=a.own_content||{};
+    return `<section class="auto-analysis"><div class="auto-analysis-head"><h2>${a.title}</h2><span>${a.period_start} ~ ${a.period_end}</span></div>
+      <div class="auto-analysis-grid"><div><b>竞品流量驱动判断</b><div class="table-scroll"><table class="data-table"><thead><tr><th>品牌</th><th>内容</th><th>达人</th><th>单条均播</th><th>主要驱动</th></tr></thead><tbody>${brands}</tbody></table></div></div>
+      <div><b>行业Top达人方向与雷鸟合作</b><div class="table-scroll"><table class="data-table"><thead><tr><th>达人</th><th>播放</th><th>内容方向</th><th>状态</th></tr></thead><tbody>${creators}</tbody></table></div></div></div>
+      <div class="auto-analysis-grid"><div><b>本品内容分析</b><ul class="analysis-list"><li>内容 ${fmt(own.content_count)} 条，覆盖 ${fmt(own.creator_count)} 位达人</li><li>播放 ${fmt(own.play_count)}，互动 ${fmt(own.interaction_count)}</li><li>主要内容方向：${own.content_direction||'-'}</li></ul></div><div><b>CPS动作建议</b><ul class="analysis-list">${(a.recommendations||[]).map(x=>`<li>${x}</li>`).join('')}</ul></div></div><div class="analysis-note">${a.quality_note||''}</div></section>`;
+  }
+  if(a.module==='creator'){
+    const counts=a.counts||{};
+    return `<section class="auto-analysis"><div class="auto-analysis-head"><h2>${a.title}</h2><span>${a.period_start} ~ ${a.period_end}</span></div><div class="auto-analysis-grid"><div><b>达人运营状态</b><ul class="analysis-list">${Object.entries(counts).map(([k,v])=>`<li>${k}：${v}位</li>`).join('')}</ul></div><div><b>建议动作</b><ul class="analysis-list">${(a.actions||[]).map(x=>`<li>${x}</li>`).join('')||'<li>当前暂无需优先处理的达人动作。</li>'}</ul></div></div><div class="analysis-note">${a.quality_note||''}</div></section>`;
+  }
   const correlations=(a.correlations||[]).map(item=>{
     const value=item.value;
     const width=value==null?0:Math.min(100,Math.abs(value)*100);
     return `<div class="correlation-row"><span>${item.label}</span><div class="correlation-track"><div class="correlation-bar ${value<0?'negative':''}" style="width:${width}%"></div></div><b>${value==null?'数据不足':value}</b></div>`;
   }).join('');
   return `<section class="auto-analysis">
-    <div class="auto-analysis-head"><h2>AI 自动经营分析</h2><span>${a.period_start} ~ ${a.period_end} · ${a.sample_days}个有效数据日</span></div>
+    <div class="auto-analysis-head"><h2>${a.title||'AI 自动经营分析'}</h2><span>${a.period_start} ~ ${a.period_end} · ${a.sample_days}个有效数据日</span></div>
     <div class="auto-analysis-grid">
       <div><b>数据结果与效果判断</b><ul class="analysis-list">${(a.findings||[]).map(x=>`<li>${x}</li>`).join('')||'<li>当前周期可比较数据不足。</li>'}</ul>
       <b>建议动作</b><ul class="analysis-list">${(a.recommendations||[]).map(x=>`<li>${x}</li>`).join('')}</ul></div>
@@ -673,7 +686,7 @@ function renderCreatorWorkbench(){
   // Pending Invitation Table
   const inviteRows=pendingPage.map((d,i)=>`
     <tr>
-      <td><input type="checkbox" class="item-check" checked></td>
+      <td><input type="checkbox" class="item-check" checked data-uid="${d.creator_uid||d.creator_id||''}" data-name="${String(d.creator_name||d.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"></td>
       <td>${(state.invitePage-1)*pageSize+i+1}</td>
       <td>${d.recommended_action||'优先建联'}</td>
       <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(d.creator_name||d.name||'')}')">${d.creator_name||d.name||d.creator_or_pin||('达人'+(i+1))}</a></td>
@@ -909,7 +922,7 @@ async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
     const common=[
       apiGet(`/kpi-cards?period_select=${days}${explicit}`),
       apiGet(`/daily-with-period?days=${days}${join}`),
-      apiGet(`/auto-analysis?days=${days}${join}`)
+      apiGet(`/auto-analysis?days=${days}&module=${state.activeModule}${join}`)
     ];
     let moduleRequests=[];
     if(state.activeModule==='platform')moduleRequests=[apiGet('/today-tasks'),apiGet(`/top-creators?limit=10${join}`)];
@@ -980,13 +993,26 @@ async function generateAI(type){
   }
 }
 
+function buildOutreachMessage(name){
+  return `${name||'老师'}您好，我们是雷鸟显示器CPS合作团队，关注到您近期在显示器/数码领域的内容表现，希望与您沟通雷鸟产品内容及CPS合作。我们可以提供产品资料、选题支持和合作政策，方便进一步交流吗？`;
+}
+
 function autoGenerateText(){
-  alert('自动生成话术功能：即将接入AI模型为每位待建联达人生成个性化建联话术。当前为UI演示。');
+  const checked=[...$$('.item-check:checked')];
+  if(!checked.length){alert('请先选择达人');return;}
+  const preview=checked.slice(0,3).map(x=>`${x.dataset.name}：\n${buildOutreachMessage(x.dataset.name)}`).join('\n\n');
+  alert(`已为 ${checked.length} 位达人生成个性化建联话术（预览前3位）：\n\n${preview}`);
 }
 
 function sendInvites(){
-  const checked=$$('.item-check:checked');
-  alert(`一键建联：已选择 ${checked.length} 位达人\n注意：此功能仅为UI演示，实际发送需对接飞书消息API。`);
+  const checked=[...$$('.item-check:checked')];
+  if(!checked.length){alert('请先选择达人');return;}
+  const tasks=checked.map(x=>({creator_uid:x.dataset.uid,creator_name:x.dataset.name,message:buildOutreachMessage(x.dataset.name)}));
+  if(tasks.some(x=>!x.creator_uid)){alert('部分达人缺少B站UID，请补齐后再生成任务。');return;}
+  const payload={version:1,created_at:new Date().toISOString(),period_start:state.periodStart,period_end:state.periodEnd,tasks};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+  const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`bilibili-outreach-${Date.now()}.json`;link.click();URL.revokeObjectURL(link.href);
+  alert(`已生成 ${tasks.length} 位达人的本地建联任务。请运行本地B站建联发送器，首次登录后可复用会话。`);
 }
 
 function importInvestmentData(){

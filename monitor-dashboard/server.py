@@ -585,6 +585,91 @@ class DataLoader:
                 "findings": findings[:5], "recommendations": recommendations[:3],
                 "quality_note": "相关性用于发现联动关系，不等同于因果结论；少于3个有效数据日时不计算。"}
 
+    @staticmethod
+    def _content_direction(titles: list[str]) -> str:
+        themes = {
+            "选购测评": ("测评", "评测", "对比", "怎么选", "选购"),
+            "产品体验": ("体验", "开箱", "实测", "使用"),
+            "电竞游戏": ("电竞", "游戏", "高刷", "帧率"),
+            "办公生产力": ("办公", "设计", "剪辑", "生产力"),
+            "价格促销": ("价格", "优惠", "值得买", "性价比", "促销"),
+        }
+        scores = {name: sum(any(word in str(title) for word in words) for title in titles)
+                  for name, words in themes.items()}
+        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        selected = [name for name, count in ranked if count > 0][:2]
+        return "、".join(selected) if selected else "综合产品介绍"
+
+    def get_industry_analysis(self, start_date: Optional[str] = None,
+                              end_date: Optional[str] = None, days: int = 7) -> dict:
+        start, end = self._resolve_period(start_date, end_date, days)
+        rows = self._filter_content(start, end)
+        brands = self.get_brand_rankings(start.isoformat(), end.isoformat(), 10)
+        brand_details = []
+        for brand in brands:
+            content = max(1, int(brand["content_count"]))
+            creators = max(1, int(brand["creator_count"]))
+            avg_play = round(brand["play_count"] / content)
+            density_score = content / max(1, max((x["content_count"] for x in brands), default=1))
+            coverage_score = creators / max(1, max((x["creator_count"] for x in brands), default=1))
+            hit_score = avg_play / max(1, max((x["play_count"] / max(1, x["content_count"]) for x in brands), default=1))
+            driver = max(((density_score, "内容密度"), (coverage_score, "达人覆盖"), (hit_score, "单条爆款")))[1]
+            brand_details.append({**brand, "avg_play": avg_play, "growth_driver": driver})
+
+        creators: dict[str, dict] = {}
+        for row in rows:
+            key = row.get("creator_id") or row.get("creator_name") or "未知达人"
+            item = creators.setdefault(key, {"creator_id": row.get("creator_id", ""),
+                "creator_name": row.get("creator_name") or "未知达人", "play_count": 0,
+                "content_count": 0, "thunderbird_link_count": 0, "titles": []})
+            item["play_count"] += int(_num(row.get("play_count")))
+            item["content_count"] += 1
+            item["thunderbird_link_count"] += int(_num(row.get("thunderbird_link_count")))
+            item["titles"].append(str(row.get("title") or ""))
+        top_creators = sorted(creators.values(), key=lambda item: item["play_count"], reverse=True)[:10]
+        for item in top_creators:
+            item["content_direction"] = self._content_direction(item.pop("titles"))
+            item["cooperation_status"] = "已建联合作" if item["thunderbird_link_count"] > 0 else "待建联"
+
+        own_rows = [row for row in rows if "雷鸟" in row.get("brands", set())]
+        own_direction = self._content_direction([str(row.get("title") or "") for row in own_rows])
+        own = {"content_count": len(own_rows), "play_count": sum(int(_num(row.get("play_count"))) for row in own_rows),
+               "interaction_count": sum(int(_num(row.get("interaction_count"))) for row in own_rows),
+               "creator_count": len({row.get("creator_id") or row.get("creator_name") for row in own_rows}),
+               "content_direction": own_direction}
+        pending_top = [item for item in top_creators if item["cooperation_status"] == "待建联"]
+        recommendations = []
+        if pending_top:
+            recommendations.append(f'优先建联行业Top达人“{pending_top[0]["creator_name"]}”，其主要方向为{pending_top[0]["content_direction"]}。')
+        if brand_details:
+            leader = brand_details[0]
+            recommendations.append(f'{leader["brand_name"]}当前主要由{leader["growth_driver"]}驱动，雷鸟应针对该路径配置内容与达人资源。')
+        recommendations.append(f'本品当前内容方向为{own_direction}，建议围绕高播放方向增加内容密度并同步补齐蓝链。')
+        return {"module": "industry", "title": "AI 行业竞争与CPS策略分析",
+                "period_start": start.isoformat(), "period_end": end.isoformat(), "sample_days": len({row.get("date") for row in rows}),
+                "brand_drivers": brand_details[:6], "top_creators": top_creators, "own_content": own,
+                "recommendations": recommendations, "quality_note": "驱动类型根据内容量、达人覆盖及单条平均播放的相对强度判断。"}
+
+    def get_creator_workbench_analysis(self, start_date: Optional[str] = None,
+                                       end_date: Optional[str] = None, days: int = 7) -> dict:
+        start, end = self._resolve_period(start_date, end_date, days)
+        plan = self.get_action_plan(start.isoformat(), end.isoformat())
+        counts = plan.get("counts", {})
+        pending = plan.get("待建联", [])
+        churn = plan.get("流失预警", [])
+        high_value = plan.get("高价值基本盘", [])
+        actions = []
+        if pending:
+            actions.append(f'优先处理前{min(10, len(pending))}位待建联达人，先生成个性化话术并人工确认后发送。')
+        if churn:
+            actions.append(f'对{len(churn)}位流失预警达人按播放与蓝链降幅排序回访。')
+        if high_value:
+            actions.append(f'对{len(high_value)}位高价值达人建立月度维护与政策倾斜清单。')
+        return {"module": "creator", "title": "AI 达人运营分析", "period_start": start.isoformat(),
+                "period_end": end.isoformat(), "sample_days": (end - start).days + 1,
+                "counts": counts, "actions": actions, "recommendations": actions,
+                "quality_note": "建联动作需在发送前确认达人UID、话术和发送频率。"}
+
     def get_ai_context(self) -> dict:
         return {"overview": self.get_overview(), "top_creators": self.get_top_creators(10),
                 "brand_rankings": self.get_brand_rankings(), "creators": self.get_report().get("creators", [])[:50],
@@ -689,8 +774,14 @@ def api_daily_with_period(days: int = Query(7, ge=1, le=60), start_date: Optiona
 
 @app.get("/api/auto-analysis")
 def api_auto_analysis(days: int = Query(7, ge=1, le=60), start_date: Optional[str] = None,
-                      end_date: Optional[str] = None):
-    return loader.get_auto_analysis(start_date, end_date, days)
+                      end_date: Optional[str] = None, module: str = "platform"):
+    if module == "industry":
+        return loader.get_industry_analysis(start_date, end_date, days)
+    if module == "creator":
+        return loader.get_creator_workbench_analysis(start_date, end_date, days)
+    result = loader.get_auto_analysis(start_date, end_date, days)
+    result.update({"module": "platform", "title": "AI 自动经营分析"})
+    return result
 
 
 @app.get("/api/roi-analysis")
