@@ -10,8 +10,10 @@ $open.SetValue('', $command)
 $open.Close()
 $policy = '{"allowed_origins":["https://www.zlqnb.online","http://10.68.208.188:8081"],"protocol":"cps-bilibili"}'
 foreach ($browser in @('Google\Chrome', 'Microsoft\Edge')) {
-  $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Policies\$browser\AutoLaunchProtocolsFromOrigins")
-  $key.SetValue('1', $policy)
-  $key.Close()
+  try {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Policies\$browser\AutoLaunchProtocolsFromOrigins")
+    $key.SetValue('1', $policy)
+    $key.Close()
+  } catch { Write-Verbose "Browser policy is managed externally; the first-launch confirmation remains enabled." }
 }
 Write-Host 'CPS Bilibili outreach helper installed.'
