@@ -7,3 +7,7 @@ node_modules/
 .playwright-cli/
 __pycache__/
 output/
+outputs/
+.codex-tmp/
+.venv/
+venv/

@@ -1,36 +1,53 @@
-# 雷鸟电视CPS系统
+# 雷鸟全渠道 CPS 经营管理系统
 
-面向电商 CPS 运营的达人、团长、商品和销售数据管理系统。当前版本包含经营总览、达人管理、团长管理、商品分析、Excel 订单导入和地图中心的前端原型，以及 Supabase 数据库结构。
+面向京东、抖音、天猫等渠道的 CPS 经营数据平台，支持 TV、显示器品类以及订单导入、规则匹配、经营总览、达人/团长管理、动销预警、ROI 分析和 B 站操盘看板。
 
-## 本地运行
+## 技术栈
+
+- Next.js 16、React 19、TypeScript、PostgreSQL
+- Python、FastAPI、Selenium、Playwright
+- Nginx、systemd、Cloudflare Tunnel
+
+## 快速开始
+
+环境要求：Node.js 22 或 24、pnpm 10、PostgreSQL 16、Python 3.11+。
 
 ```bash
-pnpm install
+git clone https://github.com/Kk-bot-zeng/CPS-.git
+cd CPS-
+pnpm install --frozen-lockfile
+```
+
+复制 `.env.example` 为 `.env.local`，只填写本地开发环境配置。不要使用或提交生产密码、Cookie、Token、数据库备份及真实业务数据。
+
+在终端加载 `DATABASE_URL` 后执行：
+
+```bash
+pnpm db:setup
+pnpm admin:create
 pnpm dev
 ```
 
-浏览器访问 `http://localhost:3000`。
+创建管理员前需临时设置 `ADMIN_ACCOUNT` 和 `ADMIN_PASSWORD`。浏览器访问 `http://localhost:3000`。
 
-## 环境变量
+如需运行 B 站操盘看板：
 
-复制 `.env.example` 为 `.env.local`，填写：
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r monitor-dashboard/requirements.txt
+cd monitor-dashboard
+uvicorn server:app --host 127.0.0.1 --port 8090
+```
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_AMAP_KEY`
+京东采集服务仅在明确获得测试账号和授权后配置，依赖见 `deploy/requirements.txt`。普通页面和导入功能开发不需要启动真实采集服务。
 
-## 数据库
+## 验证命令
 
-在 Supabase SQL Editor 中执行 `supabase/schema.sql`。生产环境还需要按管理员、运营、只读用户三个角色补充写入策略。
+```bash
+pnpm build
+python monitor-dashboard/verify_package.py
+```
 
-## Vercel 部署
-
-将目录推送到 GitHub 私有仓库，在 Vercel 导入仓库并配置上述环境变量即可。构建命令使用 `pnpm build`，输出由 Next.js 自动识别。
-
-正式域名：`zlqnb.online`。在 Vercel 项目的 Domains 中添加该域名后，到阿里云 DNS 控制台添加 Vercel 提示的 `A` 或 `CNAME` 记录。建议同时添加 `www.zlqnb.online`，并将其中一个设置为主域名、另一个自动跳转。
-
-## 当前导入规则
-
-上传 Excel 后优先读取 `gmv` 工作表，否则读取第一个工作表。支持字段：主订单编号、商品ID、商品数量、支付完成时间、订单状态、订单应付金额、达人昵称、选购商品。
-
-导入前必须选择京东、抖音或天猫渠道。订单使用“渠道 + 主订单编号”作为唯一键，同一订单号在不同渠道不会互相覆盖。已有生产库升级时，先在 Supabase SQL Editor 执行 `supabase/channel_dimension.sql`，再执行 `supabase/performance.sql`；历史渠道会暂存为 `unknown`，需要人工确认后修正。
+完整的开发、数据库、分支、交付和验收要求见 [开发交接指南](docs/DEVELOPMENT_HANDOFF.md)。可直接发送给开发方 AI 的任务提示词见 [AI 二次开发提示词](docs/AI_DEVELOPMENT_PROMPT.md)。

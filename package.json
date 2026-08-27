@@ -2,8 +2,13 @@
   "name": "thunderbird-tv-cps",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22 <25"
+  },
   "scripts": {
     "bilibili:outreach": "scripts\\bilibili-outreach.cmd",
+    "db:setup": "node scripts/setup-local-db.mjs",
+    "admin:create": "node scripts/create-admin.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
