@@ -32,6 +32,8 @@ import {
   Trash2,
   Siren,
   MonitorPlay,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -47,7 +49,7 @@ import BusinessSelect from "@/components/business-select";
 import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 import SalesWarningPage, { WarningPopup, acknowledgeWarnings, loadWarnings, type WarningPayload } from "@/components/sales-warning-page";
 
-type Page = "总览" | "B站操盘看板" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心";
+type Page = "总览" | "B站操盘看板" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心" | "文案生成";
 type ProductCategory = "tv" | "monitor";
 type Order = {
   sourceKey: string;
@@ -80,6 +82,7 @@ const nav: { label: Page; icon: React.ElementType }[] = [
   { label: "数据导入", icon: FileSpreadsheet },
   { label: "动销预警", icon: Siren },
   { label: "地图中心", icon: MapPinned },
+  { label: "文案生成", icon: FileText },
 ];
 
 const talents = [
@@ -194,7 +197,7 @@ export default function DashboardApp() {
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
   const [category, setCategory] = useState<ProductCategory>("tv");
-  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板" || page === "达人/团长管理";
+  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板" || page === "达人/团长管理" || page === "文案生成";
   const effectiveChannel: ChannelFilter = category === "monitor" && (page === "总览" || page === "数据导入" || page === "达人/团长管理") ? "jd" : channel;
   const [warningData, setWarningData] = useState<WarningPayload | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
@@ -282,6 +285,7 @@ export default function DashboardApp() {
           )}
           {page === "动销预警" && <SalesWarningPage channel={channel} onRead={refreshWarnings} />}
           {page === "地图中心" && <RealMap channel={channel} />}
+          {page === "文案生成" && <CopywritingPanel channel={effectiveChannel} category={category} />}
         </section>
       </main>
       {!warningDismissed && warningData && <WarningPopup data={warningData} onView={viewWarnings} />}
@@ -1263,6 +1267,136 @@ function Filters({ placeholder }: { placeholder: string }) {
       <button>
         <Download size={15} /> 导出
       </button>
+    </div>
+  );
+}
+
+function CopywritingPanel({
+  channel,
+  category,
+}: {
+  channel: ChannelFilter;
+  category: ProductCategory;
+}) {
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [tone, setTone] = useState("professional");
+
+  const tones = [
+    { value: "professional", label: "专业正式" },
+    { value: "lively", label: "活泼生动" },
+    { value: "concise", label: "简洁有力" },
+    { value: "emotional", label: "情感共鸣" },
+  ];
+
+  const channelLabel = channel === "all" ? "全部渠道" : channelName(channel);
+  const categoryLabel = category === "tv" ? "TV" : "显示器";
+
+  async function handleGenerate() {
+    if (!input.trim()) return;
+    setGenerating(true);
+    setResult("");
+    try {
+      await new Promise((r) => setTimeout(r, 1500));
+      setResult(
+        `【${categoryLabel} · ${channelLabel}】\n` +
+        `根据您的需求「${input.slice(0, 30)}${input.length > 30 ? "..." : ""}」，` +
+        `已生成${tones.find((t) => t.value === tone)?.label}风格的文案草稿。\n\n` +
+        `（文案生成功能将在后续版本中接入 AI 模型，当前为占位示例）`
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <div className="copywriting-panel">
+      <div className="page-title">
+        <div>
+          <h2>文案生成</h2>
+          <p>
+            {categoryLabel} · {channelLabel} · 智能生成电商推广文案
+          </p>
+        </div>
+      </div>
+      <div className="copywriting-layout">
+        <div className="copywriting-input-area">
+          <div className="copywriting-config">
+            <div className="cw-config-item">
+              <label>文案风格</label>
+              <select value={tone} onChange={(e) => setTone(e.target.value)}>
+                {tones.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="cw-config-item">
+              <label>目标渠道</label>
+              <span className="cw-tag">{channelLabel}</span>
+            </div>
+            <div className="cw-config-item">
+              <label>产品品类</label>
+              <span className="cw-tag">{categoryLabel}</span>
+            </div>
+          </div>
+          <div className="cw-textarea-wrap">
+            <textarea
+              className="cw-textarea"
+              placeholder={`请输入文案需求，例如：为${categoryLabel}新品写一段${channelLabel}渠道的推广文案，突出画质和性价比...`}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              rows={6}
+            />
+          </div>
+          <button
+            className="cw-generate-btn primary"
+            onClick={handleGenerate}
+            disabled={generating || !input.trim()}
+          >
+            {generating ? (
+              <>
+                <RefreshCw size={16} className="cw-spin" /> 生成中…
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} /> 生成文案
+              </>
+            )}
+          </button>
+        </div>
+        {result && (
+          <div className="copywriting-result">
+            <div className="panel-head">
+              <div>
+                <h3>生成结果</h3>
+                <p>点击生成按钮获取文案</p>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(result);
+                }}
+              >
+                复制文案
+              </button>
+            </div>
+            <div className="cw-result-content">
+              <pre>{result}</pre>
+            </div>
+          </div>
+        )}
+        {!result && !generating && (
+          <div className="copywriting-empty">
+            <FileText size={48} />
+            <h3>智能文案生成</h3>
+            <p>
+              输入您的需求，选择风格和渠道，一键生成专业的电商推广文案
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
