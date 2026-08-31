@@ -24,11 +24,12 @@ pnpm install --frozen-lockfile
 
 ```bash
 pnpm db:setup
+pnpm db:seed-demo
 pnpm admin:create
 pnpm dev
 ```
 
-创建管理员前需临时设置 `ADMIN_ACCOUNT` 和 `ADMIN_PASSWORD`。浏览器访问 `http://localhost:3000`。
+`db:seed-demo` 仅允许写入本机数据库，生成完全脱敏的 TV/显示器、京东/抖音演示数据，便于观察筛选、排行和趋势效果。创建管理员前需临时设置 `ADMIN_ACCOUNT` 和 `ADMIN_PASSWORD`。浏览器访问 `http://localhost:3000`。
 
 如需运行 B 站操盘看板：
 

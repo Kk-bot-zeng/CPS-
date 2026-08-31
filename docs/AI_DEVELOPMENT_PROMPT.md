@@ -44,9 +44,10 @@ GitHub仓库所有者：Kk-bot-zeng
 3. 复制.env.example为.env.local，只填写本地配置；SESSION_SECRET使用至少32位随机字符串。
 4. 严禁索取或使用生产数据库密码、生产.env文件、京东/B站真实账号、Cookie、Token、Cloudflare凭证及真实业务数据。
 5. 在当前终端加载DATABASE_URL后执行：pnpm db:setup
-6. 临时设置ADMIN_ACCOUNT和ADMIN_PASSWORD后执行：pnpm admin:create
-7. 启动主系统：pnpm dev
-8. 访问http://localhost:3000，确认登录及基础页面可用。
+6. 执行pnpm db:seed-demo，向本机数据库写入完全脱敏的演示数据，用于查看TV/显示器、京东/抖音、达人、型号、排行和日期趋势。不得将演示脚本指向远程或生产数据库。
+7. 临时设置ADMIN_ACCOUNT和ADMIN_PASSWORD后执行：pnpm admin:create
+8. 启动主系统：pnpm dev
+9. 访问http://localhost:3000，确认登录、筛选、看板及演示数据均可见。
 
 如需求涉及B站操盘看板，再执行：
    python -m venv .venv
@@ -137,6 +138,7 @@ GitHub仓库所有者：Kk-bot-zeng
 5. 在GitHub创建以main为目标的Pull Request，但不要自行合并。
 6. Pull Request必须包含需求背景、实现范围、修改文件、数据库迁移与回退、环境变量和依赖变化、测试结果、截图、未验证项、已知风险及部署注意事项。
 7. 不得强制推送或删除main，不得修改生产服务器和生产数据库。
+8. main已启用保护规则，必须由项目负责人Kk-bot-zeng审核批准后才能合并；不得绕过保护规则。
 
 十、最终交付
 

@@ -53,6 +53,7 @@ $env:DATABASE_URL="postgresql://cps_dev:本地密码@127.0.0.1:5432/cps_dev"
 $env:ADMIN_ACCOUNT="dev_admin"
 $env:ADMIN_PASSWORD="仅限本地的强密码"
 pnpm db:setup
+pnpm db:seed-demo
 pnpm admin:create
 pnpm dev
 ```
@@ -64,11 +65,12 @@ export DATABASE_URL='postgresql://cps_dev:本地密码@127.0.0.1:5432/cps_dev'
 export ADMIN_ACCOUNT='dev_admin'
 export ADMIN_PASSWORD='仅限本地的强密码'
 pnpm db:setup
+pnpm db:seed-demo
 pnpm admin:create
 pnpm dev
 ```
 
-`pnpm db:setup` 只用于空白的本地开发数据库。已有数据库的结构变更必须编写新的增量 SQL，禁止通过修改旧脚本来伪造迁移历史。
+`pnpm db:setup` 只用于空白的本地开发数据库。`pnpm db:seed-demo` 仅允许连接本机数据库，写入可重复生成的脱敏演示数据，使开发者能够在本地查看渠道、品类、达人、型号、排行和日期趋势。已有数据库的结构变更必须编写新的增量 SQL，禁止通过修改旧脚本来伪造迁移历史。
 
 ## 5. B站看板与京东采集
 
