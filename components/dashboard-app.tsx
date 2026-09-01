@@ -1295,7 +1295,7 @@ function CopywritingPanel({
   const categoryLabel = category === "tv" ? "TV" : "显示器";
 
   async function handleGenerate() {
-    if (!form.product.trim() || !form.intent.trim()) return;
+    if (generating || !form.product.trim() || !form.intent.trim()) return;
     setGenerating(true);
     setResult("");
     setError("");
@@ -1376,6 +1376,12 @@ function CopywritingPanel({
               </>
             )}
           </button>
+          {generating && (
+            <div className="cw-generating-hint" role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", gap: 7, color: "#5d6d83", fontSize: 11 }}>
+              <RefreshCw size={14} className="cw-spin" />
+              正在生成，复杂需求可能需要几十秒，请勿重复点击。
+            </div>
+          )}
         </div>
         {result && (
           <div className="copywriting-result">
