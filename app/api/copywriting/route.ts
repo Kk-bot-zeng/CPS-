@@ -9,9 +9,11 @@ export async function POST(request: Request) {
   const auth = await requireApiUser();
   if (auth.error) return auth.error;
 
+  // The dedicated Turing variables are preferred. DEEPSEEK_API_KEY remains only
+  // as a legacy fallback for existing deployments and is not recommended.
   const apiKey = process.env.COPYWRITING_AI_API_KEY || process.env.DEEPSEEK_API_KEY;
-  const baseUrl = (process.env.COPYWRITING_AI_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
-  const model = process.env.COPYWRITING_AI_MODEL || "deepseek-chat";
+  const baseUrl = (process.env.COPYWRITING_AI_BASE_URL || "https://live-turing.cn.llm.tcljd.com/api/v1").replace(/\/$/, "");
+  const model = process.env.COPYWRITING_AI_MODEL || "turing/gpt-5.4-mini";
   if (!apiKey) return NextResponse.json({ error: "文案智能体尚未配置，请联系管理员配置 AI 服务" }, { status: 503 });
 
   let body: Record<string, unknown>;
