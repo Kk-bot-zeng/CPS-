@@ -173,6 +173,24 @@ function requestedCopyLength(value: string) {
   return Math.min(1000, Math.max(20, Number.parseInt(matched[0], 10)));
 }
 
+function limitDraftSection(content: string, targetLength: number) {
+  const startToken = "【文案草稿】";
+  const endToken = "【待确认事项】";
+  const start = content.indexOf(startToken);
+  const end = content.indexOf(endToken, start + startToken.length);
+  if (start < 0 || end < 0) return content;
+  const draft = content.slice(start + startToken.length, end);
+  let count = 0;
+  let limited = "";
+  for (const character of draft) {
+    if (!/\s/u.test(character)) count += 1;
+    if (count > targetLength) break;
+    limited += character;
+  }
+  if (count <= targetLength) return content;
+  return `${content.slice(0, start + startToken.length)}${limited.trimEnd()}\n${content.slice(end)}`;
+}
+
 const failureResponse = (failure: Failure) => {
   if (failure.kind === "timeout") {
     return NextResponse.json({
@@ -273,8 +291,9 @@ export async function POST(request: Request) {
       });
       const payload = parsePayload(await upstream.text());
       if (upstream.ok) {
-        const content = payload.choices?.[0]?.message?.content?.trim();
-        if (!content) return NextResponse.json({ error: "AI 未返回有效文案，请稍后重试", code: "AI_EMPTY_RESPONSE" }, { status: 502 });
+        const rawContent = payload.choices?.[0]?.message?.content?.trim();
+        if (!rawContent) return NextResponse.json({ error: "AI 未返回有效文案，请稍后重试", code: "AI_EMPTY_RESPONSE" }, { status: 502 });
+        const content = limitDraftSection(rawContent, targetLength);
         let generationId: string | null = null;
         try {
           generationId = await saveGenerationHistory({ ...body, productVersionIds: grounding.versionIds }, data, content, auth.user.id);
