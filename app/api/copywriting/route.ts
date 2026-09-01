@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
+import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
 // 文案生成可能比普通接口耗时更长；同时保留明确的总预算，避免请求无限占用服务端资源。
@@ -18,6 +19,114 @@ const TOTAL_BUDGET_MS = boundedEnvNumber("COPYWRITING_AI_TOTAL_TIMEOUT_MS", 150_
 const MAX_ATTEMPTS = 2;
 const DEFAULT_RETRY_DELAY_MS = 1_200;
 const MAX_RETRY_DELAY_MS = 4_000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function idsFromBody(body: Record<string, unknown>, key: string, singular: string) {
+  const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+  const candidate = body[key] ?? body[snakeKey] ?? body[`${key.replace(/Ids$/, "_ids")}`] ?? body[singular];
+  const nested = Array.isArray(body.products)
+    ? body.products.map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      return key === "productVersionIds" ? (record.productVersionId ?? record.product_version_id ?? record.versionId ?? record.currentVersionId) : record[singular];
+    })
+    : [];
+  const values = Array.isArray(candidate) ? candidate : candidate ? [candidate] : nested;
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && UUID_RE.test(value)))];
+}
+
+async function saveGenerationHistory(
+  body: Record<string, unknown>,
+  data: Record<string, string>,
+  resultText: string,
+  userId: string,
+) {
+  const productIds = idsFromBody(body, "productIds", "productId");
+  const requestedVersionIds = idsFromBody(body, "productVersionIds", "productVersionId");
+  let versionIds = requestedVersionIds;
+  if (productIds.length && !versionIds.length) {
+    const { rows } = await pool.query<{ current_version_id: string | null }>(
+      `select current_version_id from public.product_knowledge_products
+        where id = any($1::uuid[]) order by array_position($1::uuid[], id)`, [productIds],
+    );
+    versionIds = rows.map((row) => row.current_version_id).filter((value): value is string => Boolean(value));
+  }
+  const category = data.category === "tv" || data.category === "monitor" ? data.category : null;
+  const channel = ["all", "jd", "douyin", "tmall"].includes(data.channel) ? data.channel : null;
+  const requestConfig = {
+    scene: data.scene, audience: data.audience, channel: data.channel, category: data.category,
+    product: data.product, facts: data.facts, policy: data.policy, constraints: data.constraints,
+    intent: data.intent, tone: data.tone, length: data.length,
+  };
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into public.copywriting_generations
+      (created_by, product_category, channel, product_ids, product_version_ids, request_config, result_text)
+     values ($1, $2, $3, $4::uuid[], $5::uuid[], $6::jsonb, $7)
+     returning id`,
+    [userId, category, channel, productIds, versionIds, JSON.stringify(requestConfig), resultText.slice(0, 50_000)],
+  );
+  return rows[0]?.id || null;
+}
+
+async function loadProductGrounding(body: Record<string, unknown>, category: string, channel: string) {
+  const productIds = idsFromBody(body, "productIds", "productId");
+  if (!productIds.length || (category !== "tv" && category !== "monitor")) {
+    return { productNames: "", facts: "", policy: "", versionIds: [] as string[] };
+  }
+  try {
+    const [productsResult, fieldsResult, policiesResult] = await Promise.all([
+      pool.query<{
+        id: string; current_version_id: string | null; canonical_model: string; product_series: string | null; sku: string | null;
+        promotion_name: string | null; custom_values: Record<string, unknown>;
+      }>(
+        `select id, current_version_id, canonical_model, product_series, sku, promotion_name, custom_values
+           from public.product_knowledge_products
+          where id = any($1::uuid[]) and product_category = $2 and status = 'active'`, [productIds, category],
+      ),
+      (category === "tv" || category === "monitor")
+        ? pool.query<{ field_key: string; field_label: string }>(
+          `select field_key, field_label from public.product_knowledge_fields
+            where product_category = $1 and active = true`, [category],
+        )
+        : Promise.resolve({ rows: [] as { field_key: string; field_label: string }[] }),
+      pool.query<{
+        canonical_model: string; policy_name: string; channel: string; policy_data: Record<string, unknown>;
+        starts_at: string | null; ends_at: string | null;
+      }>(
+        `select k.canonical_model, p.policy_name, p.channel, p.policy_data, p.starts_at, p.ends_at
+           from public.product_knowledge_policies p
+           join public.product_knowledge_products k on k.id = p.product_id
+          where p.product_id = any($1::uuid[]) and p.status = 'active'
+            and (p.starts_at is null or p.starts_at <= now())
+            and (p.ends_at is null or p.ends_at >= now())
+            and ($2 = '' or p.channel = 'all' or p.channel = $2)`, [productIds, channel || ""],
+      ),
+    ]);
+    const labels = new Map(fieldsResult.rows.map((field) => [field.field_key, field.field_label]));
+    const products = productsResult.rows;
+    const productNames = products.map((product) => product.canonical_model).join("、");
+    const facts = products.map((product) => {
+      const custom = Object.entries(product.custom_values || {})
+        .map(([key, value]) => `${labels.get(key) || key}：${typeof value === "string" ? value : JSON.stringify(value)}`)
+        .join("；");
+      return [
+        `型号：${product.canonical_model}`,
+        product.product_series ? `系列：${product.product_series}` : "",
+        product.sku ? `SKU：${product.sku}` : "",
+        product.promotion_name ? `推广名：${product.promotion_name}` : "",
+        custom,
+      ].filter(Boolean).join("；");
+    }).join("\n").slice(0, 12_000);
+    const policy = policiesResult.rows.map((item) => {
+      const values = Object.entries(item.policy_data || {}).map(([key, value]) => `${key}：${typeof value === "string" ? value : JSON.stringify(value)}`).join("；");
+      return `型号：${item.canonical_model}；政策：${item.policy_name}；渠道：${item.channel}${values ? `；${values}` : ""}`;
+    }).join("\n").slice(0, 8_000);
+    return { productNames, facts, policy, versionIds: products.map((product) => product.current_version_id).filter((value): value is string => Boolean(value)) };
+  } catch (error) {
+    console.error("[copywriting] failed to load product knowledge", error);
+    return { productNames: "", facts: "", policy: "", versionIds: [] as string[] };
+  }
+}
 
 type UpstreamPayload = {
   choices?: { message?: { content?: string } }[];
@@ -54,6 +163,15 @@ const retryAfterMs = (value: string | null) => {
 };
 
 const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+function requestedCopyLength(value: string) {
+  if (value === "short") return 100;
+  if (value === "medium") return 200;
+  if (value === "long") return 350;
+  const matched = value.match(/\d{1,4}/);
+  if (!matched) return 200;
+  return Math.min(1000, Math.max(20, Number.parseInt(matched[0], 10)));
+}
 
 const failureResponse = (failure: Failure) => {
   if (failure.kind === "timeout") {
@@ -94,17 +212,31 @@ export async function POST(request: Request) {
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "请求格式不正确" }, { status: 400 }); }
-  const data = {
+  let data = {
     scene: clean(body.scene, 30), audience: clean(body.audience, 30), channel: clean(body.channel, 30), category: clean(body.category, 30),
-    product: clean(body.product, 200), facts: clean(body.facts), policy: clean(body.policy), constraints: clean(body.constraints, 1000),
+    product: clean(body.product, 200), facts: clean(body.facts, 8_000), policy: clean(body.policy, 8_000), constraints: clean(body.constraints, 1_000),
     intent: clean(body.intent), tone: clean(body.tone, 30), length: clean(body.length, 20),
+  };
+  // When the UI sends product IDs, load only current active product facts and
+  // currently effective policies. This grounds the model and keeps old/disabled
+  // information out of newly generated copy.
+  const grounding = await loadProductGrounding(body, data.category, data.channel);
+  data = {
+    ...data,
+    product: data.product || grounding.productNames,
+    facts: [data.facts, grounding.facts].filter(Boolean).join("\n").slice(0, 12_000),
+    policy: [data.policy, grounding.policy].filter(Boolean).join("\n").slice(0, 10_000),
   };
   if (!data.product || !data.intent) return NextResponse.json({ error: "请填写产品型号和生成要求" }, { status: 400 });
 
   // 豆包 Seed 的 max_completion_tokens 包含最终回答与推理总和；文案场景无需深度推理，
   // 关闭思考可显著降低首字节等待和无效 token 消耗。按界面选择的长度控制输出预算，避免
   // 为短文案预留过大的生成空间。模型仍可通过 COPYWRITING_AI_MODEL 环境变量覆盖。
-  const completionTokenLimit = data.length === "short" ? 512 : data.length === "long" ? 1_024 : 768;
+  const targetLength = requestedCopyLength(data.length);
+  // Chinese marketing copy is normally close to one token per character. Keep
+  // enough room for the mandatory review sections without giving a 50-character
+  // request the same large budget as a long article.
+  const completionTokenLimit = targetLength <= 50 ? 384 : targetLength <= 100 ? 512 : targetLength <= 200 ? 768 : 1_024;
 
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
@@ -136,14 +268,22 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({ model, temperature: 0.55, reasoning_effort: "minimal", max_completion_tokens: completionTokenLimit, messages: [
           { role: "system", content: `你是雷鸟品牌内部销售文案助手。文案用于团长群或达人群，结构应为：标题、一句话变化、产品/价格/政策、1至3个购买理由、限制与待确认、行动号召。只能使用用户提供的事实，不得虚构型号、参数、政策、价格、截止时间、库存、销量、排名或优惠。缺失信息必须写【待业务确认】；价格叠加关系不明确时不得计算确定到手价。若价格、政策、型号或参数相互冲突，风险状态必须是“不可发布”；存在重要缺失时为“修改后再审”；信息完整时为“可进入人工终审”。禁止使用无依据的“全网最低、最好、第一、售罄不补、马上涨价”等表述。输出必须包含三个区块：【文案草稿】【待确认事项】【风险状态】，最终内容仍需人工终审，禁止声称已自动发布。` },
-          { role: "user", content: `请生成内部销售宣发文案。\n场景：${data.scene}\n目标群体：${data.audience}\n渠道：${data.channel}\n品类：${data.category}\n产品型号：${data.product}\n已确认卖点/参数：${data.facts || "未提供"}\n活动政策与价格依据：${data.policy || "未提供"}\n时间/地区/条件：${data.constraints || "未提供"}\n用户意图：${data.intent}\n风格：${data.tone}\n长度：${data.length}` },
+          { role: "user", content: `请生成内部销售宣发文案。\n场景：${data.scene}\n目标群体：${data.audience}\n渠道：${data.channel}\n品类：${data.category}\n产品型号：${data.product}\n已确认卖点/参数：${data.facts || "未提供"}\n活动政策与价格依据：${data.policy || "未提供"}\n时间/地区/条件：${data.constraints || "未提供"}\n用户意图：${data.intent}\n风格：${data.tone}\n文案草稿目标字数：${targetLength}字（不计区块标题、待确认事项和风险状态，请严格控制）` },
         ] }),
       });
       const payload = parsePayload(await upstream.text());
       if (upstream.ok) {
         const content = payload.choices?.[0]?.message?.content?.trim();
         if (!content) return NextResponse.json({ error: "AI 未返回有效文案，请稍后重试", code: "AI_EMPTY_RESPONSE" }, { status: 502 });
-        return NextResponse.json({ content });
+        let generationId: string | null = null;
+        try {
+          generationId = await saveGenerationHistory({ ...body, productVersionIds: grounding.versionIds }, data, content, auth.user.id);
+        } catch (historyError) {
+          // Generation remains usable if a deployment has not applied the optional
+          // history migration yet; the server log makes the migration gap visible.
+          console.error("[copywriting] failed to persist generation history", historyError);
+        }
+        return NextResponse.json({ content, generationId });
       }
 
       if (isRetriableStatus(upstream.status)) {

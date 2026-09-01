@@ -15,6 +15,7 @@ const files = [
   "supabase/product_category.sql",
   "supabase/resource_product_category.sql",
   "supabase/sales_warning.sql",
+  "supabase/product_knowledge.sql",
   "monitor-dashboard/schema.sql",
 ];
 

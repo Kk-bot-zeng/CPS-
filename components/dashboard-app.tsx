@@ -48,6 +48,7 @@ import JdSyncCard from "@/components/jd-sync-card";
 import BusinessSelect from "@/components/business-select";
 import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 import SalesWarningPage, { WarningPopup, acknowledgeWarnings, loadWarnings, type WarningPayload } from "@/components/sales-warning-page";
+import ProductKnowledgeWorkspace from "@/components/product-knowledge-workspace";
 
 type Page = "总览" | "B站操盘看板" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心" | "文案生成";
 type ProductCategory = "tv" | "monitor";
@@ -285,7 +286,7 @@ export default function DashboardApp() {
           )}
           {page === "动销预警" && <SalesWarningPage channel={channel} onRead={refreshWarnings} />}
           {page === "地图中心" && <RealMap channel={channel} />}
-          {page === "文案生成" && <CopywritingPanel channel={effectiveChannel} category={category} />}
+          {page === "文案生成" && <ProductKnowledgeWorkspace channel={effectiveChannel} category={category} />}
         </section>
       </main>
       {!warningDismissed && warningData && <WarningPopup data={warningData} onView={viewWarnings} />}
