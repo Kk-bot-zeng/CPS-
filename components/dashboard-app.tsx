@@ -32,6 +32,8 @@ import {
   Trash2,
   Siren,
   MonitorPlay,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -47,7 +49,7 @@ import BusinessSelect from "@/components/business-select";
 import { parseSpreadsheet } from "@/lib/parse-spreadsheet";
 import SalesWarningPage, { WarningPopup, acknowledgeWarnings, loadWarnings, type WarningPayload } from "@/components/sales-warning-page";
 
-type Page = "总览" | "B站操盘看板" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心";
+type Page = "总览" | "B站操盘看板" | "达人/团长管理" | "数据导入" | "动销预警" | "地图中心" | "文案生成";
 type ProductCategory = "tv" | "monitor";
 type Order = {
   sourceKey: string;
@@ -80,6 +82,7 @@ const nav: { label: Page; icon: React.ElementType }[] = [
   { label: "数据导入", icon: FileSpreadsheet },
   { label: "动销预警", icon: Siren },
   { label: "地图中心", icon: MapPinned },
+  { label: "文案生成", icon: FileText },
 ];
 
 const talents = [
@@ -194,7 +197,7 @@ export default function DashboardApp() {
   const [uploading, setUploading] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
   const [category, setCategory] = useState<ProductCategory>("tv");
-  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板" || page === "达人/团长管理";
+  const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板" || page === "达人/团长管理" || page === "文案生成";
   const effectiveChannel: ChannelFilter = category === "monitor" && (page === "总览" || page === "数据导入" || page === "达人/团长管理") ? "jd" : channel;
   const [warningData, setWarningData] = useState<WarningPayload | null>(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
@@ -282,6 +285,7 @@ export default function DashboardApp() {
           )}
           {page === "动销预警" && <SalesWarningPage channel={channel} onRead={refreshWarnings} />}
           {page === "地图中心" && <RealMap channel={channel} />}
+          {page === "文案生成" && <CopywritingPanel channel={effectiveChannel} category={category} />}
         </section>
       </main>
       {!warningDismissed && warningData && <WarningPopup data={warningData} onView={viewWarnings} />}
@@ -1263,6 +1267,145 @@ function Filters({ placeholder }: { placeholder: string }) {
       <button>
         <Download size={15} /> 导出
       </button>
+    </div>
+  );
+}
+
+function CopywritingPanel({
+  channel,
+  category,
+}: {
+  channel: ChannelFilter;
+  category: ProductCategory;
+}) {
+  const [form, setForm] = useState({ scene: "产品卖点", audience: "达人群", product: "", facts: "", policy: "", constraints: "", intent: "", tone: "professional", length: "medium" });
+  const [result, setResult] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const tones = [
+    { value: "professional", label: "专业正式" },
+    { value: "lively", label: "活泼生动" },
+    { value: "concise", label: "简洁有力" },
+    { value: "emotional", label: "情感共鸣" },
+  ];
+
+  const channelLabel = channel === "all" ? "全部渠道" : channelName(channel);
+  const categoryLabel = category === "tv" ? "TV" : "显示器";
+
+  async function handleGenerate() {
+    if (!form.product.trim() || !form.intent.trim()) return;
+    setGenerating(true);
+    setResult("");
+    setError("");
+    try {
+      const response = await fetch("/api/copywriting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, channel: channelLabel, category: categoryLabel, tone: tones.find((t) => t.value === form.tone)?.label || form.tone }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "文案生成失败");
+      setResult(payload.content);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "文案生成失败，请稍后重试");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <div className="copywriting-panel">
+      <div className="page-title">
+        <div>
+          <h2>文案生成</h2>
+          <p>
+            {categoryLabel} · {channelLabel} · 智能生成电商推广文案
+          </p>
+        </div>
+      </div>
+      <div className="copywriting-layout">
+        <div className="copywriting-input-area panel">
+          <div className="cw-section-title"><div><Sparkles size={17}/><b>文案需求</b></div><small>带 * 为必填，信息越完整，结果越准确</small></div>
+          <div className="copywriting-config">
+            <div className="cw-config-item">
+              <label>使用场景</label>
+              <select value={form.scene} onChange={(e) => setForm({ ...form, scene: e.target.value })}><option>产品政策</option><option>产品卖点</option><option>活动预热</option><option>平销推广</option><option>活动收尾</option></select>
+            </div>
+            <div className="cw-config-item">
+              <label>目标群体</label>
+              <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })}><option>团长群</option><option>达人群</option></select>
+            </div>
+            <div className="cw-config-item">
+              <label>文案风格</label>
+              <select value={form.tone} onChange={(e) => setForm({ ...form, tone: e.target.value })}>
+                {tones.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="cw-config-item"><label>文案长度</label><select value={form.length} onChange={(e) => setForm({ ...form, length: e.target.value })}><option value="short">精简（100字内）</option><option value="medium">标准（200字内）</option><option value="long">详细（350字内）</option></select></div>
+            <div className="cw-config-item">
+              <label>目标渠道</label>
+              <span className="cw-tag">{channelLabel}</span>
+            </div>
+            <div className="cw-config-item">
+              <label>产品品类</label>
+              <span className="cw-tag">{categoryLabel}</span>
+            </div>
+          </div>
+          <div className="cw-form-grid">
+            <label className="cw-field"><span>产品型号 *</span><input value={form.product} onChange={(e) => setForm({ ...form, product: e.target.value })} placeholder={`例如：${categoryLabel} 鹏7 26款`} /></label>
+            <label className="cw-field cw-wide"><span>已确认的产品卖点/参数</span><textarea value={form.facts} onChange={(e) => setForm({ ...form, facts: e.target.value })} placeholder="仅填写已经确认的事实，多个卖点可换行" /></label>
+            <label className="cw-field cw-wide"><span>活动政策与价格依据</span><textarea value={form.policy} onChange={(e) => setForm({ ...form, policy: e.target.value })} placeholder="填写优惠、佣金、补贴、到手价及叠加关系；不确定可留空" /></label>
+            <label className="cw-field"><span>时间/地区/适用条件</span><input value={form.constraints} onChange={(e) => setForm({ ...form, constraints: e.target.value })} placeholder="例如：9月1日至9月7日，仅限京东" /></label>
+            <label className="cw-field cw-wide"><span>希望如何生成 *</span><textarea value={form.intent} onChange={(e) => setForm({ ...form, intent: e.target.value })} placeholder="例如：突出高刷和游戏体验，语气专业但有行动号召，适合直接发达人群" /></label>
+          </div>
+          {error && <div className="cw-error"><AlertCircle size={15}/>{error}</div>}
+          <button
+            className="cw-generate-btn primary"
+            onClick={handleGenerate}
+            disabled={generating || !form.product.trim() || !form.intent.trim()}
+          >
+            {generating ? (
+              <>
+                <RefreshCw size={16} className="cw-spin" /> 生成中…
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} /> 生成文案
+              </>
+            )}
+          </button>
+        </div>
+        {result && (
+          <div className="copywriting-result">
+            <div className="panel-head">
+              <div>
+                <h3>生成结果</h3>
+                <p>点击生成按钮获取文案</p>
+              </div>
+              <button
+                onClick={async () => { await navigator.clipboard.writeText(result); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }}
+              >
+                {copied ? "已复制" : "复制文案"}
+              </button>
+            </div>
+            <div className="cw-result-content">
+              <pre>{result}</pre>
+            </div>
+            <div className="cw-review-note"><AlertCircle size={14}/> AI 生成内容须经人工核对产品参数、价格与活动政策后再发布</div>
+          </div>
+        )}
+        {!result && !generating && (
+          <div className="copywriting-empty">
+            <FileText size={48} />
+            <h3>智能文案生成</h3>
+            <p>
+              输入您的需求，选择风格和渠道，一键生成专业的电商推广文案
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
