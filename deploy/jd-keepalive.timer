@@ -1,10 +1,10 @@
 [Unit]
-Description=Run JD session keepalive every 30 minutes
+Description=Run JD session keepalive every 10 minutes
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=30min
-RandomizedDelaySec=2min
+OnUnitActiveSec=10min
+RandomizedDelaySec=1min
 Persistent=true
 
 [Install]
