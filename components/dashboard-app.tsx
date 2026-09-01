@@ -1278,10 +1278,11 @@ function CopywritingPanel({
   channel: ChannelFilter;
   category: ProductCategory;
 }) {
-  const [input, setInput] = useState("");
+  const [form, setForm] = useState({ scene: "产品卖点", audience: "达人群", product: "", facts: "", policy: "", constraints: "", intent: "", tone: "professional", length: "medium" });
   const [result, setResult] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [tone, setTone] = useState("professional");
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const tones = [
     { value: "professional", label: "专业正式" },
@@ -1294,17 +1295,17 @@ function CopywritingPanel({
   const categoryLabel = category === "tv" ? "TV" : "显示器";
 
   async function handleGenerate() {
-    if (!input.trim()) return;
+    if (!form.product.trim() || !form.intent.trim()) return;
     setGenerating(true);
     setResult("");
+    setError("");
     try {
-      await new Promise((r) => setTimeout(r, 1500));
-      setResult(
-        `【${categoryLabel} · ${channelLabel}】\n` +
-        `根据您的需求「${input.slice(0, 30)}${input.length > 30 ? "..." : ""}」，` +
-        `已生成${tones.find((t) => t.value === tone)?.label}风格的文案草稿。\n\n` +
-        `（文案生成功能将在后续版本中接入 AI 模型，当前为占位示例）`
-      );
+      const response = await fetch("/api/copywriting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, channel: channelLabel, category: categoryLabel, tone: tones.find((t) => t.value === form.tone)?.label || form.tone }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "文案生成失败");
+      setResult(payload.content);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "文案生成失败，请稍后重试");
     } finally {
       setGenerating(false);
     }
@@ -1321,11 +1322,20 @@ function CopywritingPanel({
         </div>
       </div>
       <div className="copywriting-layout">
-        <div className="copywriting-input-area">
+        <div className="copywriting-input-area panel">
+          <div className="cw-section-title"><div><Sparkles size={17}/><b>文案需求</b></div><small>带 * 为必填，信息越完整，结果越准确</small></div>
           <div className="copywriting-config">
             <div className="cw-config-item">
+              <label>使用场景</label>
+              <select value={form.scene} onChange={(e) => setForm({ ...form, scene: e.target.value })}><option>产品政策</option><option>产品卖点</option><option>活动预热</option><option>平销推广</option><option>活动收尾</option></select>
+            </div>
+            <div className="cw-config-item">
+              <label>目标群体</label>
+              <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })}><option>团长群</option><option>达人群</option></select>
+            </div>
+            <div className="cw-config-item">
               <label>文案风格</label>
-              <select value={tone} onChange={(e) => setTone(e.target.value)}>
+              <select value={form.tone} onChange={(e) => setForm({ ...form, tone: e.target.value })}>
                 {tones.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
@@ -1333,6 +1343,7 @@ function CopywritingPanel({
                 ))}
               </select>
             </div>
+            <div className="cw-config-item"><label>文案长度</label><select value={form.length} onChange={(e) => setForm({ ...form, length: e.target.value })}><option value="short">精简（100字内）</option><option value="medium">标准（200字内）</option><option value="long">详细（350字内）</option></select></div>
             <div className="cw-config-item">
               <label>目标渠道</label>
               <span className="cw-tag">{channelLabel}</span>
@@ -1342,19 +1353,18 @@ function CopywritingPanel({
               <span className="cw-tag">{categoryLabel}</span>
             </div>
           </div>
-          <div className="cw-textarea-wrap">
-            <textarea
-              className="cw-textarea"
-              placeholder={`请输入文案需求，例如：为${categoryLabel}新品写一段${channelLabel}渠道的推广文案，突出画质和性价比...`}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              rows={6}
-            />
+          <div className="cw-form-grid">
+            <label className="cw-field"><span>产品型号 *</span><input value={form.product} onChange={(e) => setForm({ ...form, product: e.target.value })} placeholder={`例如：${categoryLabel} 鹏7 26款`} /></label>
+            <label className="cw-field cw-wide"><span>已确认的产品卖点/参数</span><textarea value={form.facts} onChange={(e) => setForm({ ...form, facts: e.target.value })} placeholder="仅填写已经确认的事实，多个卖点可换行" /></label>
+            <label className="cw-field cw-wide"><span>活动政策与价格依据</span><textarea value={form.policy} onChange={(e) => setForm({ ...form, policy: e.target.value })} placeholder="填写优惠、佣金、补贴、到手价及叠加关系；不确定可留空" /></label>
+            <label className="cw-field"><span>时间/地区/适用条件</span><input value={form.constraints} onChange={(e) => setForm({ ...form, constraints: e.target.value })} placeholder="例如：9月1日至9月7日，仅限京东" /></label>
+            <label className="cw-field cw-wide"><span>希望如何生成 *</span><textarea value={form.intent} onChange={(e) => setForm({ ...form, intent: e.target.value })} placeholder="例如：突出高刷和游戏体验，语气专业但有行动号召，适合直接发达人群" /></label>
           </div>
+          {error && <div className="cw-error"><AlertCircle size={15}/>{error}</div>}
           <button
             className="cw-generate-btn primary"
             onClick={handleGenerate}
-            disabled={generating || !input.trim()}
+            disabled={generating || !form.product.trim() || !form.intent.trim()}
           >
             {generating ? (
               <>
@@ -1375,16 +1385,15 @@ function CopywritingPanel({
                 <p>点击生成按钮获取文案</p>
               </div>
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(result);
-                }}
+                onClick={async () => { await navigator.clipboard.writeText(result); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }}
               >
-                复制文案
+                {copied ? "已复制" : "复制文案"}
               </button>
             </div>
             <div className="cw-result-content">
               <pre>{result}</pre>
             </div>
+            <div className="cw-review-note"><AlertCircle size={14}/> AI 生成内容须经人工核对产品参数、价格与活动政策后再发布</div>
           </div>
         )}
         {!result && !generating && (

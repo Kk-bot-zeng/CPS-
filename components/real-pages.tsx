@@ -93,34 +93,30 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const [loading, setLoading] = useState(true);
   const [start, setStart] = useState(() => relativeDateKey(-1));
   const [end, setEnd] = useState(() => relativeDateKey(-1));
-  const [datePreset, setDatePreset] = useState("yesterday");
+  const [draftStart, setDraftStart] = useState(() => relativeDateKey(-1));
+  const [draftEnd, setDraftEnd] = useState(() => relativeDateKey(-1));
   const [showCustomDates, setShowCustomDates] = useState(false);
+  const [dateError, setDateError] = useState("");
   const [talent, setTalent] = useState("all");
   const [model, setModel] = useState("all");
   const [productView, setProductView] = useState<"model" | "series">("model");
   const [expandedTalent, setExpandedTalent] = useState("");
   const [expandedTalentSeries, setExpandedTalentSeries] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
-  const applyDatePreset = (preset: string) => {
-    const today = new Date();
-    const key = localDateKey;
-    const offset = (days: number) => { const date = new Date(today); date.setDate(date.getDate() + days); return key(date); };
-    let nextStart = key(today), nextEnd = key(today);
-    if (preset === "yesterday") nextStart = nextEnd = offset(-1);
-    if (preset === "7d") nextStart = offset(-6);
-    if (preset === "30d") nextStart = offset(-29);
-    if (preset === "week") { const day = today.getDay() || 7; nextStart = offset(1 - day); }
-    if (preset === "month") nextStart = key(new Date(today.getFullYear(), today.getMonth(), 1));
-    setStart(nextStart); setEnd(nextEnd); setDatePreset(preset); setShowCustomDates(false);
+  const openDatePicker = () => {
+    setDraftStart(start);
+    setDraftEnd(end);
+    setDateError("");
+    setShowCustomDates(true);
   };
-  const comparisonRange = useMemo(() => {
-    const from = new Date(`${start}T00:00:00`), to = new Date(`${end}T00:00:00`);
-    const span = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
-    const comparisonEnd = new Date(from); comparisonEnd.setDate(comparisonEnd.getDate() - 1);
-    const comparisonStart = new Date(comparisonEnd); comparisonStart.setDate(comparisonStart.getDate() - span + 1);
-    const key = localDateKey;
-    return `${key(comparisonStart)} ~ ${key(comparisonEnd)}`;
-  }, [start, end]);
+  const applyCustomDates = () => {
+    if (!draftStart || !draftEnd) return setDateError("请选择完整的开始和结束日期");
+    if (draftStart > draftEnd) return setDateError("开始日期不能晚于结束日期");
+    setStart(draftStart);
+    setEnd(draftEnd);
+    setShowCustomDates(false);
+    setDateError("");
+  };
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -171,20 +167,14 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
         </div>
         <div className="real-actions">
           <div className="date-range-bar">
-            <div className="date-range-summary"><span>当前：{start} ~ {end}</span><small>对比：{comparisonRange}</small></div>
-            <button className={`date-preset ${datePreset === "realtime" ? "active" : ""}`} onClick={() => applyDatePreset("realtime")}>实时 <ChevronDown size={12}/></button>
-            <button className={`date-preset ${datePreset === "yesterday" ? "active" : ""}`} onClick={() => applyDatePreset("yesterday")}>昨天</button>
-            <button className={`date-preset ${datePreset === "7d" ? "active" : ""}`} onClick={() => applyDatePreset("7d")}>近7天</button>
-            <button className={`date-preset ${datePreset === "30d" ? "active" : ""}`} onClick={() => applyDatePreset("30d")}>近30天</button>
-            <button className={`date-preset ${datePreset === "day" ? "active" : ""}`} onClick={() => applyDatePreset("day")}>天</button>
-            <button className={`date-preset ${datePreset === "week" ? "active" : ""}`} onClick={() => applyDatePreset("week")}>周</button>
-            <button className={`date-preset ${datePreset === "month" ? "active" : ""}`} onClick={() => applyDatePreset("month")}>月</button>
             <div className="custom-date-anchor">
-              <button className={`date-preset custom ${datePreset === "custom" ? "active" : ""}`} onClick={() => { setDatePreset("custom"); setShowCustomDates((value) => !value); }} aria-expanded={showCustomDates}>自定义 <CalendarDays size={13}/></button>
+              <button className="date-range-trigger" onClick={() => showCustomDates ? setShowCustomDates(false) : openDatePicker()} aria-expanded={showCustomDates}><CalendarDays size={15}/><span>{start}</span><em>至</em><span>{end}</span><ChevronDown size={14}/></button>
               {showCustomDates && <div className="custom-date-popover">
-                <label>开始日期<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label><span>至</span>
-                <label>结束日期<input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label>
-                <button onClick={() => setShowCustomDates(false)}>确定</button>
+                <div className="custom-date-title"><b>自定义时间范围</b><small>选择完成后点击确定应用</small></div>
+                <div className="custom-date-fields"><label>开始日期<input type="date" value={draftStart} onChange={(e) => { setDraftStart(e.target.value); setDateError(""); }} /></label><span>—</span>
+                <label>结束日期<input type="date" value={draftEnd} min={draftStart} onChange={(e) => { setDraftEnd(e.target.value); setDateError(""); }} /></label></div>
+                {dateError && <p className="custom-date-error">{dateError}</p>}
+                <div className="custom-date-actions"><button onClick={() => setShowCustomDates(false)}>取消</button><button className="primary" onClick={applyCustomDates}>确定</button></div>
               </div>}
             </div>
           </div>
@@ -316,11 +306,11 @@ function SalesLineChart({ rows }: { rows: Summary["daily"] }) {
   const first = new Date(rows[0].date), last = new Date(rows.at(-1)!.date);
   const useMonthly = (last.getTime() - first.getTime()) / 86400000 > 62;
   const chartRows = useMonthly ? [...rows.reduce((map, row) => { const key = row.date.slice(0, 7); const value = map.get(key) || { date: key, gmv: 0, gsv: 0, qty: 0, orders: 0 }; value.gmv += row.gmv; value.gsv += row.gsv; value.qty += row.qty; value.orders += row.orders; map.set(key, value); return map; }, new Map<string, Summary["daily"][number]>()).values()] : rows;
-  const width = Math.max(1000, chartRows.length * (useMonthly ? 100 : 46)), height = 260, left = 58, right = 22, top = 34, bottom = 42;
+  const width = Math.max(1000, chartRows.length * (useMonthly ? 112 : 82)), height = 280, left = 58, right = 28, top = 48, bottom = 46;
   const max = Math.max(...chartRows.map((x) => x.gmv), 1), plotW = width-left-right, plotH = height-top-bottom;
   const points = chartRows.map((d,i) => ({ ...d, x:left+(chartRows.length===1?plotW/2:i*plotW/(chartRows.length-1)), y:top+(1-d.gmv/max)*plotH }));
   const path = points.map((p,i)=>`${i?"L":"M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  return <div className="sales-line-chart"><div className="line-legend"><i/>销售金额 <small>{useMonthly ? "跨月范围已按月汇总" : "按日展示，可左右滑动"}</small></div><div className="sales-line-scroll"><svg viewBox={`0 0 ${width} ${height}`} style={{width}}>{[0,.25,.5,.75,1].map((r)=><g key={r}><line x1={left} x2={width-right} y1={top+r*plotH} y2={top+r*plotH}/><text x={left-8} y={top+r*plotH+4}>{Math.round(max*(1-r)/10000)}万</text></g>)}<path className="line-area" d={`${path} L${points.at(-1)!.x},${top+plotH} L${points[0].x},${top+plotH} Z`}/><path className="line-path" d={path}/>{points.map((p,i)=><g className="line-point" key={p.date}><circle cx={p.x} cy={p.y} r="4"/><title>{`${p.date}：${money(p.gmv)}，${p.qty}台`}</title>{(chartRows.length<=12||i%Math.ceil(chartRows.length/10)===0||i===chartRows.length-1)&&<><text className="line-value" x={p.x} y={Math.max(15,p.y-10)}>{p.gmv>=10000?`${(p.gmv/10000).toFixed(1)}万`:Math.round(p.gmv)}</text><text className="line-date" x={p.x} y={height-12}>{useMonthly ? p.date : p.date.slice(5).replace("-","/")}</text></>}</g>)}</svg></div></div>;
+  return <div className="sales-line-chart"><div className="line-legend"><i/>销售金额 <small>{useMonthly ? "跨月范围已按月汇总；每月金额完整展示" : "每个日期金额完整展示，可左右滑动"}</small></div><div className="sales-line-scroll"><svg viewBox={`0 0 ${width} ${height}`} style={{width}}>{[0,.25,.5,.75,1].map((r)=><g key={r}><line x1={left} x2={width-right} y1={top+r*plotH} y2={top+r*plotH}/><text x={left-8} y={top+r*plotH+4}>{Math.round(max*(1-r)/10000)}万</text></g>)}<path className="line-area" d={`${path} L${points.at(-1)!.x},${top+plotH} L${points[0].x},${top+plotH} Z`}/><path className="line-path" d={path}/>{points.map((p,i)=><g className="line-point" key={p.date}><circle cx={p.x} cy={p.y} r="4"/><title>{`${p.date}：${money(p.gmv)}，${p.qty}台`}</title><text className="line-value" x={p.x} y={Math.max(16,p.y-(i%2===0?11:25))}>{p.gmv>=10000?`${(p.gmv/10000).toFixed(1)}万`:Math.round(p.gmv)}</text><text className="line-date" x={p.x} y={height-12}>{useMonthly ? p.date : p.date.slice(5).replace("-","/")}</text></g>)}</svg></div></div>;
 }
 function RealKpi({
   label,
