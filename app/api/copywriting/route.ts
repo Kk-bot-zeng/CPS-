@@ -191,6 +191,14 @@ function limitDraftSection(content: string, targetLength: number) {
   return `${content.slice(0, start + startToken.length)}${limited.trimEnd()}\n${content.slice(end)}`;
 }
 
+function ensureDraftModels(content: string, productNames: string) {
+  const startToken = "【文案草稿】";
+  const start = content.indexOf(startToken);
+  if (start < 0 || !productNames || content.slice(start).includes(productNames)) return content;
+  const insertAt = start + startToken.length;
+  return `${content.slice(0, insertAt)}\n型号：${productNames}\n${content.slice(insertAt).trimStart()}`;
+}
+
 const failureResponse = (failure: Failure) => {
   if (failure.kind === "timeout") {
     return NextResponse.json({
@@ -293,7 +301,7 @@ export async function POST(request: Request) {
       if (upstream.ok) {
         const rawContent = payload.choices?.[0]?.message?.content?.trim();
         if (!rawContent) return NextResponse.json({ error: "AI 未返回有效文案，请稍后重试", code: "AI_EMPTY_RESPONSE" }, { status: 502 });
-        const content = limitDraftSection(rawContent, targetLength);
+        const content = limitDraftSection(ensureDraftModels(rawContent, data.product), targetLength);
         let generationId: string | null = null;
         try {
           generationId = await saveGenerationHistory({ ...body, productVersionIds: grounding.versionIds }, data, content, auth.user.id);
