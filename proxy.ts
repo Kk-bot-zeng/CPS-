@@ -15,7 +15,12 @@ export async function proxy(request: NextRequest) {
   const loggedIn = await valid(request.cookies.get("cps_session")?.value);
   const isAuth = request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/api/auth");
   const isPublic = request.nextUrl.pathname === "/api/health";
-  if (!loggedIn && !isAuth && !isPublic) return NextResponse.redirect(new URL("/login", request.url));
+  if (!loggedIn && !isAuth && !isPublic) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
   if (loggedIn && request.nextUrl.pathname === "/login") return NextResponse.redirect(new URL("/", request.url));
   return NextResponse.next();
 }

@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     conditions.push(`(canonical_model ilike $${values.length}
       or coalesce(product_series, '') ilike $${values.length}
       or coalesce(sku, '') ilike $${values.length}
-      or coalesce(promotion_name, '') ilike $${values.length}`);
+      or coalesce(promotion_name, '') ilike $${values.length})`);
   }
   const where = conditions.join(" and ");
   const countResult = await pool.query<{ count: string }>(
@@ -150,4 +150,3 @@ export async function POST(request: Request) {
     client.release();
   }
 }
-
