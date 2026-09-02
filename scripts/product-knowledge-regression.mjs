@@ -46,6 +46,8 @@ const fieldLabel = `回归峰值亮度-${stamp}`.slice(0, 80);
 const parameterModel = `QA参数表型号-${stamp}`;
 const untouchedParameterModel = `QA参数表保留型号-${stamp}`;
 const parameterFieldLabel = `回归参数字段-${stamp}`.slice(0, 80);
+const wideParameterModels = [`QA宽参数表型号A-${stamp}`, `QA宽参数表型号B-${stamp}`];
+const wideFieldLabels = Array.from({ length: 120 }, (_, index) => `回归中文参数字段-${stamp}-${String(index + 1).padStart(3, "0")}`.slice(0, 80));
 const activeMarker = `ACTIVE_POLICY_${stamp}`;
 const expiredMarker = `EXPIRED_POLICY_${stamp}`;
 
@@ -345,6 +347,44 @@ async function main() {
     assert.equal(current.custom_values[parameterField.field_key], "新参数A");
   });
 
+  await expect("120个中文动态字段支持多行预览确认且重复导入不重复建字段", async () => {
+    const headers = ["品类", "标准型号", ...wideFieldLabels];
+    const makeRow = (modelName, rowIndex) => Object.fromEntries([
+      ["品类", "TV"],
+      ["标准型号", modelName],
+      ...wideFieldLabels.map((label, fieldIndex) => [label, `值-${rowIndex}-${fieldIndex + 1}`]),
+    ]);
+    const preview = await postImport("overwrite", wideParameterModels.map(makeRow), `QA-wide-parameter-table-${stamp}.xlsx`, { headers, autoCreateFields: true });
+    assert.equal(preview.summary.newFields.length, wideFieldLabels.length);
+    assert.equal(preview.summary.validRows, wideParameterModels.length);
+    assert.equal(preview.errors?.length || 0, 0);
+    assert.equal(preview.previewRows.length, wideParameterModels.length);
+    await confirmImport(preview.importId);
+
+    let fields = await listFields();
+    let matching = fields.filter((field) => wideFieldLabels.includes(field.field_label));
+    assert.equal(matching.length, wideFieldLabels.length, "宽参数表字段未完整创建");
+    created.fields.push(...matching.map((field) => field.id));
+    const first = (await findProducts("tv", wideParameterModels[0]))[0];
+    const second = (await findProducts("tv", wideParameterModels[1]))[0];
+    assert.ok(first?.id && second?.id, "宽参数表的多行型号未成功入库");
+    created.products.push(first.id, second.id);
+    const firstDetails = await getProduct(first.id);
+    const firstField = matching.find((field) => field.field_label === wideFieldLabels[0]);
+    const lastField = matching.find((field) => field.field_label === wideFieldLabels.at(-1));
+    assert.equal(firstDetails.custom_values[firstField.field_key], "值-0-1");
+    assert.equal(firstDetails.custom_values[lastField.field_key], `值-0-${wideFieldLabels.length}`);
+
+    const repeat = await postImport("overwrite", [makeRow(wideParameterModels[0], 9)], `QA-wide-parameter-table-repeat-${stamp}.xlsx`, { headers, autoCreateFields: true });
+    assert.equal(repeat.summary.newFields.length, 0, "重复导入宽参数表不应再次创建字段");
+    await confirmImport(repeat.importId);
+    fields = await listFields();
+    matching = fields.filter((field) => wideFieldLabels.includes(field.field_label));
+    assert.equal(matching.length, wideFieldLabels.length, "重复导入宽参数表产生了重复字段");
+    const repeated = await getProduct(first.id);
+    assert.equal(repeated.custom_values[firstField.field_key], "值-9-1");
+  });
+
   await expect("完整覆盖空白可清除表内型号旧值且表外旧型号保持不变", async () => {
     const preview = await postImport("overwrite", [
       { 品类: "TV", 标准型号: parameterModel, [parameterFieldLabel]: "" },
@@ -537,6 +577,23 @@ async function main() {
   await expect("非法导入模式不应静默降级", async () => {
     const result = await request("/api/product-knowledge/import", { method: "POST", body: { action: "preview", category: "tv", mode: "not-a-mode", rows: [{ canonical_model: `invalid-mode-${stamp}` }] } });
     expectStatus(result, 400);
+  });
+
+  await expect("501个自定义字段返回单一表级错误", async () => {
+    const labels = Array.from({ length: 501 }, (_, index) => `超限中文参数字段-${stamp}-${String(index + 1).padStart(3, "0")}`);
+    const result = await request("/api/product-knowledge/import", {
+      method: "POST",
+      body: {
+        action: "preview",
+        category: "tv",
+        mode: "overwrite",
+        headers: ["品类", "标准型号", ...labels],
+        rows: [Object.fromEntries([["品类", "TV"], ["标准型号", `QA超限参数表-${stamp}`], ...labels.map((label) => [label, "x"])])],
+      },
+    });
+    expectStatus(result, 400);
+    assert.equal(result.body?.error, "参数表自定义字段不能超过500个，请减少字段后重新导入");
+    assert.equal(result.body?.errors, undefined, "超限应返回单一表级错误，不应刷出逐行错误");
   });
 
   await expect("未知字段被预览标记为错误且不直接入库", async () => {

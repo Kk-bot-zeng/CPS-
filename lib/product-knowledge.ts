@@ -55,6 +55,19 @@ export const FIXED_PRODUCT_FIELDS = [
   { key: "status", header: "状态", label: "状态", type: "select" as const, required: false, fixed: true },
 ] as const;
 
+/**
+ * Import guardrails shared by the parameter-table API and its callers.
+ *
+ * Dynamic product facts are stored in one JSONB object per product/import
+ * row. A five-hundred-field ceiling keeps the schema flexible while still
+ * putting a deterministic bound on request and JSONB expansion costs.
+ */
+export const MAX_PRODUCT_KNOWLEDGE_IMPORT_ROWS = 20_000;
+export const MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS = 500;
+export const MAX_PRODUCT_KNOWLEDGE_IMPORT_HEADERS =
+  FIXED_PRODUCT_FIELDS.length + MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS;
+export const MAX_PRODUCT_KNOWLEDGE_IMPORT_REQUEST_BYTES = 64 * 1024 * 1024;
+
 const FIXED_KEYS: Set<string> = new Set(FIXED_PRODUCT_FIELDS.map((field) => field.key));
 const IMPORT_META_KEYS = new Set(["__rowNum__", "__rowNum", "rowNum", "序号", "index"]);
 

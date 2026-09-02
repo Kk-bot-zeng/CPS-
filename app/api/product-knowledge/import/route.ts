@@ -3,6 +3,10 @@ import { requireApiUser } from "@/lib/api-auth";
 import { pool } from "@/lib/db";
 import {
   FIXED_PRODUCT_FIELDS,
+  MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS,
+  MAX_PRODUCT_KNOWLEDGE_IMPORT_HEADERS,
+  MAX_PRODUCT_KNOWLEDGE_IMPORT_REQUEST_BYTES,
+  MAX_PRODUCT_KNOWLEDGE_IMPORT_ROWS,
   canonicalImportKey,
   cleanStatus,
   cleanText,
@@ -25,8 +29,6 @@ import {
 } from "@/lib/product-knowledge";
 
 export const runtime = "nodejs";
-const MAX_IMPORT_ROWS = 20_000;
-const MAX_CUSTOM_FIELDS = 100;
 const IMPORT_META_KEYS = new Set(["__rowNum__", "__rowNum", "rowNum", "序号", "index"]);
 
 type NormalizedImportRow = {
@@ -108,6 +110,31 @@ function importHeaders(rows: unknown[], suppliedHeaders: unknown) {
     if (source && typeof source === "object" && !Array.isArray(source)) Object.keys(source as Record<string, unknown>).forEach((key) => union.add(key));
   });
   return [...union];
+}
+
+function importHeaderStats(headers: string[]) {
+  let nonEmpty = 0;
+  const custom = new Set<string>();
+  for (const header of headers) {
+    if (isEmptySpreadsheetHeader(header)) continue;
+    nonEmpty += 1;
+    const canonical = canonicalImportKey(header);
+    if (FIXED_PRODUCT_FIELDS.some((field) => field.key === canonical) || IMPORT_META_KEYS.has(header)) continue;
+    custom.add(comparableHeader(header));
+  }
+  return { nonEmpty, customCount: custom.size };
+}
+
+function explicitCustomFieldStats(rows: unknown[]) {
+  let maxPerRow = 0;
+  for (const source of rows) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    const row = source as Record<string, unknown>;
+    const values = row.custom_values ?? row.customValues;
+    if (!values || typeof values !== "object" || Array.isArray(values)) continue;
+    maxPerRow = Math.max(maxPerRow, Object.keys(values as Record<string, unknown>).length);
+  }
+  return maxPerRow;
 }
 
 function withUniqueFieldKey(base: string, used: Set<string>) {
@@ -214,6 +241,7 @@ function parseRows(rows: unknown[], category: ProductCategory, fields: ProductFi
   const errors: string[] = [];
   const warnings: string[] = [];
   const valid: NormalizedImportRow[] = [];
+  let fieldLimitExceeded = false;
   for (let index = 0; index < rows.length; index += 1) {
     const rowNumber = index + 2;
     const source = rows[index];
@@ -235,7 +263,7 @@ function parseRows(rows: unknown[], category: ProductCategory, fields: ProductFi
       if (!field) { errors.push(`第${rowNumber}行：未知或已停用字段“${key}”`); continue; }
       custom[field.field_key] = optionValue(value, field);
     }
-    if (Object.keys(custom).length > MAX_CUSTOM_FIELDS) { errors.push(`第${rowNumber}行：自定义字段不能超过${MAX_CUSTOM_FIELDS}个`); continue; }
+    if (Object.keys(custom).length > MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS) { fieldLimitExceeded = true; continue; }
     const fieldErrors = validateCustomValues(custom, fields, { requireRequired: false }).concat(fields.filter((field) => field.active).map((field) => validFieldValue(custom[field.field_key], { ...field, required: false })).filter((item): item is string => Boolean(item)));
     if (fieldErrors.length) { errors.push(...fieldErrors.slice(0, 10).map((item) => `第${rowNumber}行：${item}`)); continue; }
     valid.push({
@@ -257,7 +285,7 @@ function parseRows(rows: unknown[], category: ProductCategory, fields: ProductFi
     if (deduped.has(row.canonical_model_normalized)) { warnings.push(`第${row.rowNumber}行：重复标准型号，已采用最后一行`); }
     deduped.set(row.canonical_model_normalized, row);
   }
-  return { rows: [...deduped.values()], errors, warnings, duplicateRows: valid.length - deduped.size };
+  return { rows: [...deduped.values()], errors, warnings, duplicateRows: valid.length - deduped.size, fieldLimitExceeded };
 }
 
 async function fieldsFor(category: ProductCategory, includeInactive = false) {
@@ -315,14 +343,27 @@ async function preview(body: Record<string, unknown>, userId: string) {
     : parseImportMode(body.mode);
   if (!mode) return NextResponse.json({ error: "导入模式只能是insert_only、merge或overwrite" }, { status: 400 });
   const sourceRows = body.rows;
-  if (!Array.isArray(sourceRows) || !sourceRows.length || sourceRows.length > MAX_IMPORT_ROWS) return NextResponse.json({ error: `每次请导入1至${MAX_IMPORT_ROWS}条数据` }, { status: 400 });
+  if (!Array.isArray(sourceRows) || !sourceRows.length || sourceRows.length > MAX_PRODUCT_KNOWLEDGE_IMPORT_ROWS) return NextResponse.json({ error: `每次请导入1至${MAX_PRODUCT_KNOWLEDGE_IMPORT_ROWS}条数据` }, { status: 400 });
   const suppliedHeaders = importHeaders(sourceRows, body.headers);
+  const headerStats = importHeaderStats(suppliedHeaders);
+  if (headerStats.nonEmpty > MAX_PRODUCT_KNOWLEDGE_IMPORT_HEADERS) {
+    return NextResponse.json({ error: `参数表总表头不能超过${MAX_PRODUCT_KNOWLEDGE_IMPORT_HEADERS}列，请拆分后重新导入` }, { status: 400 });
+  }
+  if (headerStats.customCount > MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS) {
+    return NextResponse.json({ error: `参数表自定义字段不能超过${MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS}个，请减少字段后重新导入` }, { status: 400 });
+  }
+  if (explicitCustomFieldStats(sourceRows) > MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS) {
+    return NextResponse.json({ error: `参数表单行自定义字段不能超过${MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS}个，请减少字段后重新导入` }, { status: 400 });
+  }
   const allFields = await fieldsFor(category, true);
   const autoCreateFields = body.autoCreateFields === true || mode === "overwrite";
   const prepared = prepareImportFields(suppliedHeaders, category, allFields, autoCreateFields);
   if (prepared.errors.length) return NextResponse.json({ error: "参数表头校验失败", errors: prepared.errors.slice(0, 200) }, { status: 400 });
   const fields = prepared.activeFields;
   const parsed = parseRows(sourceRows, category, fields);
+  if (parsed.fieldLimitExceeded) {
+    return NextResponse.json({ error: `参数表自定义字段不能超过${MAX_PRODUCT_KNOWLEDGE_IMPORT_CUSTOM_FIELDS}个，请减少字段后重新导入` }, { status: 400 });
+  }
   const existing = await existingByKeys(category, parsed.rows.map((row) => row.canonical_model_normalized));
   const requiredFields = fields.filter((field) => field.active && field.required);
   const rowsWithRequired = parsed.rows.filter((row) => {
@@ -541,6 +582,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await requireApiUser();
   if (auth.error) return auth.error;
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_PRODUCT_KNOWLEDGE_IMPORT_REQUEST_BYTES) {
+    return NextResponse.json({ error: "参数表请求体不能超过64MB，请拆分文件后重新导入" }, { status: 413 });
+  }
   let body: Record<string, unknown>;
   try { body = await request.json() as Record<string, unknown>; }
   catch { return NextResponse.json({ error: "请求格式不正确" }, { status: 400 }); }
