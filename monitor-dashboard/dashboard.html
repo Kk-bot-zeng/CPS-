@@ -1200,19 +1200,31 @@ function updateFooter(){
   }
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded',()=>{
-  document.addEventListener('click',event=>{
-    if(state.customDateOpen){
-      const banner=$('#filterBanner');
-      if(banner&&!banner.contains(event.target))closeCustomDatePicker();
+// ─── Init / global date-picker dismissal ─────────────────────────────────────
+// Bind on the window in capture phase so the handler still works after
+// renderApp() replaces the inline filter-custom-date node, and even when the
+// page is embedded by a host shell that already fired DOMContentLoaded.
+function bindCustomDateDismissHandlers(){
+  if(window.__cpsDateDismissBound)return;
+  window.__cpsDateDismissBound=true;
+  const isDateControlTarget=target=>{
+    const el=target&&target.nodeType===1?target:null;
+    return !!(el&&(el.closest('#customDateGroup')||el.closest('[aria-controls="customDateGroup"]')));
+  };
+  const dismissOutside=event=>{
+    if(state.customDateOpen&&!isDateControlTarget(event.target))closeCustomDatePicker();
+  };
+  const dismissEscape=event=>{
+    if(state.customDateOpen&&event.key==='Escape'){
+      event.preventDefault();event.stopPropagation();closeCustomDatePicker();
     }
-  });
-  document.addEventListener('keydown',event=>{
-    if(event.key==='Escape'&&state.customDateOpen){event.preventDefault();closeCustomDatePicker();}
-  });
-  loadDailyData('7');
-});
+  };
+  window.addEventListener('pointerdown',dismissOutside,true);
+  window.addEventListener('click',dismissOutside,true);
+  window.addEventListener('keydown',dismissEscape,true);
+}
+bindCustomDateDismissHandlers();
+document.addEventListener('DOMContentLoaded',()=>{loadDailyData('7');});
 
 // Let the host page own scrolling so this dashboard visually behaves like a
 // native system module instead of a nested framed application.
