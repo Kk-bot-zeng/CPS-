@@ -43,6 +43,9 @@ const model = `QA回归型号-${stamp}`;
 const monitorModel = model;
 const fieldKey = `qa_peak_${Date.now().toString(36)}`.slice(0, 63);
 const fieldLabel = `回归峰值亮度-${stamp}`.slice(0, 80);
+const parameterModel = `QA参数表型号-${stamp}`;
+const untouchedParameterModel = `QA参数表保留型号-${stamp}`;
+const parameterFieldLabel = `回归参数字段-${stamp}`.slice(0, 80);
 const activeMarker = `ACTIVE_POLICY_${stamp}`;
 const expiredMarker = `EXPIRED_POLICY_${stamp}`;
 
@@ -99,14 +102,26 @@ function productFrom(result) {
   return product;
 }
 
-async function postImport(mode, rows, fileName = `QA-${mode}-${stamp}.json`) {
+async function postImport(mode, rows, fileName = `QA-${mode}-${stamp}.json`, options = {}) {
   const result = await request("/api/product-knowledge/import", {
     method: "POST",
-    body: { action: "preview", category: "tv", mode, fileName, rows },
+    body: { action: "preview", category: "tv", mode, fileName, rows, ...options },
   });
   expectStatus(result, 201);
   assert.ok(result.body?.importId, `预览缺少 importId：${JSON.stringify(result.body)}`);
   return result.body;
+}
+
+async function listFields(category = "tv", includeInactive = true) {
+  const result = await request(`/api/product-knowledge/fields?category=${encodeURIComponent(category)}&includeInactive=${includeInactive ? "true" : "false"}`);
+  expectStatus(result, 200);
+  return result.body.fields || [];
+}
+
+async function findProducts(category, query) {
+  const result = await request(`/api/product-knowledge?category=${encodeURIComponent(category)}&q=${encodeURIComponent(query)}`);
+  expectStatus(result, 200);
+  return result.body.products || [];
 }
 
 async function confirmImport(importId) {
@@ -215,6 +230,107 @@ async function main() {
     assert.ok(tvTemplate.body.columns.some((item) => item.key === fieldKey));
     assert.ok(!monitorTemplate.body.columns.some((item) => item.key === fieldKey));
     assert.deepEqual(tvTemplate.body.importModes.map((item) => item.value), ["insert_only", "merge", "overwrite"]);
+  });
+
+  await expect("参数表完整覆盖可按中文表头自动新增字段并导入两条型号", async () => {
+    const headers = ["品类", "标准型号", "产品系列", "SKU", parameterFieldLabel];
+    const preview = await postImport("overwrite", [
+      { 品类: "TV", 标准型号: parameterModel, 产品系列: "参数表回归系列", SKU: `PARAM-${stamp}-A`, [parameterFieldLabel]: "旧参数A" },
+      { 品类: "TV", 标准型号: untouchedParameterModel, 产品系列: "参数表回归系列", SKU: `PARAM-${stamp}-B`, [parameterFieldLabel]: "旧参数B" },
+    ], `QA-parameter-table-${stamp}.xlsx`, { headers, autoCreateFields: true });
+    assert.equal(preview.mode, "overwrite");
+    assert.equal(preview.summary.newFields.length, 1);
+    assert.equal(preview.summary.newFields[0].field_label, parameterFieldLabel);
+    assert.equal(preview.newFields[0].field_label, parameterFieldLabel);
+    assert.equal(preview.restoredFields.length, 0);
+    await confirmImport(preview.importId);
+
+    const fields = await listFields();
+    const matching = fields.filter((field) => field.field_label === parameterFieldLabel);
+    assert.equal(matching.length, 1, "自动新增字段应只有一条");
+    assert.equal(matching[0].active, true);
+    created.fields.push(matching[0].id);
+
+    const products = await findProducts("tv", parameterModel);
+    const untouchedProducts = await findProducts("tv", untouchedParameterModel);
+    assert.equal(products.length, 1, "参数表型号A未成功入库");
+    assert.equal(untouchedProducts.length, 1, "参数表型号B未成功入库");
+    created.products.push(products[0].id, untouchedProducts[0].id);
+    const currentA = await getProduct(products[0].id);
+    const currentB = await getProduct(untouchedProducts[0].id);
+    assert.equal(currentA.custom_values[matching[0].field_key], "旧参数A");
+    assert.equal(currentB.custom_values[matching[0].field_key], "旧参数B");
+  });
+
+  let parameterField;
+  let parameterProduct;
+  let untouchedProduct;
+  await expect("第二次导入相同中文表头不会重复建字段且会更新对应型号", async () => {
+    const fieldsBefore = await listFields();
+    parameterField = fieldsBefore.find((field) => field.field_label === parameterFieldLabel);
+    assert.ok(parameterField?.id, "找不到参数表自动新增字段");
+    const products = await findProducts("tv", parameterModel);
+    const untouchedProducts = await findProducts("tv", untouchedParameterModel);
+    parameterProduct = products[0];
+    untouchedProduct = untouchedProducts[0];
+    assert.ok(parameterProduct?.id && untouchedProduct?.id, "找不到参数表导入的型号");
+
+    const preview = await postImport("overwrite", [
+      { 品类: "TV", 标准型号: parameterModel, [parameterFieldLabel]: "新参数A" },
+    ], `QA-parameter-table-repeat-${stamp}.xlsx`, {
+      headers: ["品类", "标准型号", parameterFieldLabel],
+      autoCreateFields: true,
+    });
+    assert.equal(preview.summary.newFields.length, 0, "相同表头不应再次新增字段");
+    assert.equal(preview.newFields.length, 0);
+    assert.equal(preview.restoredFields.length, 0);
+    await confirmImport(preview.importId);
+
+    const fieldsAfter = await listFields();
+    assert.equal(fieldsAfter.filter((field) => field.field_label === parameterFieldLabel).length, 1, "相同中文表头产生了重复字段");
+    const current = await getProduct(parameterProduct.id);
+    assert.equal(current.custom_values[parameterField.field_key], "新参数A");
+  });
+
+  await expect("完整覆盖空白可清除表内型号旧值且表外旧型号保持不变", async () => {
+    const preview = await postImport("overwrite", [
+      { 品类: "TV", 标准型号: parameterModel, [parameterFieldLabel]: "" },
+    ], `QA-parameter-table-clear-${stamp}.xlsx`, {
+      headers: ["品类", "标准型号", parameterFieldLabel],
+      autoCreateFields: true,
+    });
+    assert.equal(preview.summary.newFields.length, 0);
+    await confirmImport(preview.importId);
+
+    const current = await getProduct(parameterProduct.id);
+    assert.ok(!Object.hasOwn(current.custom_values || {}, parameterField.field_key) || current.custom_values[parameterField.field_key] === null, "空白覆盖未清除型号A旧值");
+    const untouched = await getProduct(untouchedProduct.id);
+    assert.equal(untouched.custom_values[parameterField.field_key], "旧参数B", "未出现在本次表内的型号B被错误清除或修改");
+  });
+
+  await expect("停用同名字段后再次导入可自动恢复且不创建重复字段", async () => {
+    const disabled = await request(`/api/product-knowledge/fields/${encodeURIComponent(parameterField.id)}`, { method: "DELETE" });
+    expectStatus(disabled, 200);
+    assert.equal(disabled.body.field.active, false);
+
+    const preview = await postImport("overwrite", [
+      { 品类: "TV", 标准型号: parameterModel, [parameterFieldLabel]: "恢复后参数A" },
+    ], `QA-parameter-table-reactivate-${stamp}.xlsx`, {
+      headers: ["品类", "标准型号", parameterFieldLabel],
+      autoCreateFields: true,
+    });
+    assert.equal(preview.summary.newFields.length, 0, "停用同名字段不应重新创建字段");
+    assert.equal(preview.restoredFields.length, 1);
+    assert.equal(preview.restoredFields[0].field_label, parameterFieldLabel);
+    await confirmImport(preview.importId);
+
+    const fields = await listFields();
+    const matching = fields.filter((field) => field.field_label === parameterFieldLabel);
+    assert.equal(matching.length, 1, "恢复后出现了重复字段");
+    assert.equal(matching[0].id, parameterField.id);
+    assert.equal(matching[0].active, true);
+    const current = await getProduct(parameterProduct.id);
+    assert.equal(current.custom_values[parameterField.field_key], "恢复后参数A");
   });
 
   await expect("合并更新：非空字段更新、空白字段不覆盖", async () => {

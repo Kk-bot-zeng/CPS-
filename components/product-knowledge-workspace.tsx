@@ -60,14 +60,20 @@ type KnowledgeField = {
 type ImportRow = {
   rowNumber: number;
   values: Record<string, string>;
-  state: "new" | "update" | "conflict" | "error";
+  state: "new" | "update" | "skip" | "conflict" | "error";
   message?: string;
 };
 
 type ImportPreview = {
+  importId: string;
   fileName: string;
   rows: ImportRow[];
-  mode: "merge" | "overwrite" | "new-only";
+  mode: "overwrite";
+  summary?: { totalRows?: number; validRows?: number; invalidRows?: number; duplicateRows?: number; creates?: number; updates?: number; skips?: number; conflicts?: number; newFields?: { field_key: string; field_label: string; field_type: string }[] };
+  errors?: string[];
+  warnings?: string[];
+  newFields?: { field_key: string; field_label: string; field_type: string }[];
+  restoredFields?: { field_key: string; field_label: string }[];
 };
 
 type Policy = {
@@ -158,8 +164,12 @@ function normalisePolicy(input: any, index: number): Policy {
 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json() as Promise<T>;
+  const payload = await response.json().catch(() => null) as any;
+  if (!response.ok) {
+    const message = payload?.error || payload?.errors?.join?.("；") || `HTTP ${response.status}`;
+    throw new Error(String(message));
+  }
+  return payload as T;
 }
 
 function formatFacts(product: ProductKnowledge | null, fields: KnowledgeField[]) {
@@ -279,40 +289,42 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
     showNotice("模板已下载，字段会按当前资料库配置生成");
   }
 
-  function buildPreview(fileName: string, rows: Record<string, string>[]): ImportPreview {
-    const existingKeys = new Set(products.map((product) => `${product.model}\u0000${product.sku}`.toLowerCase()));
-    const seen = new Set<string>();
-    return {
-      fileName,
-      mode: "merge",
-      rows: rows.map((values, index) => {
-        const model = safeText(values["标准型号"] || values.model || values.canonical_model);
-        const sku = safeText(values.SKU || values.sku);
-        const key = `${model}\u0000${sku}`.toLowerCase();
-        if (!model) return { rowNumber: index + 2, values, state: "error", message: "缺少标准型号" };
-        if (seen.has(key)) return { rowNumber: index + 2, values, state: "conflict", message: "文件内存在重复型号+SKU" };
-        seen.add(key);
-        return { rowNumber: index + 2, values, state: existingKeys.has(key) ? "update" : "new" };
-      }),
-    };
-  }
-
   function onImportFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try {
+      void (async () => {
+        try {
         const workbook = XLSX.read(reader.result, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" }).map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, safeText(value)])));
+        const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false });
+        const headers = Array.isArray(matrix[0]) ? matrix[0].map((value) => safeText(value)) : [];
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", blankrows: false }).map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, safeText(value)])));
         if (!rows.length) throw new Error("文件没有可导入的数据行");
-        setImportPreview(buildPreview(file.name, rows));
+        setImportPreview(null);
+        setError("");
+        // The browser only parses the workbook.  Classification, field
+        // discovery and all conflict counts come from the server preview so a
+        // failed request can never fall back to local optimistic data.
+        const payload = await requestJson<any>("/api/product-knowledge/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "preview", category, mode: "overwrite", autoCreateFields: true, fileName: file.name, headers, rows }),
+        });
+        if (!payload.importId) throw new Error("服务器未返回导入预览ID");
+        const previewRows: ImportRow[] = (payload.previewRows || []).map((row: any) => ({
+          rowNumber: Number(row.rowNumber) || 0,
+          values: Object.fromEntries(Object.entries(row.values || {}).map(([key, value]) => [key, safeText(value)])),
+          state: row.state === "update" ? "update" : row.state === "skip" ? "skip" : "new",
+        }));
+        setImportPreview({ importId: String(payload.importId), fileName: file.name, mode: "overwrite", rows: previewRows, summary: payload.summary, errors: payload.errors || [], warnings: payload.warnings || [], newFields: payload.newFields || [], restoredFields: payload.restoredFields || [] });
         setTab("products");
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "文件解析失败，请检查模板格式");
-      }
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : "文件解析或服务端预览失败，请检查模板格式");
+        }
+      })();
     };
     reader.readAsArrayBuffer(file);
   }
@@ -321,14 +333,12 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
 
   async function commitImport() {
     if (!importPreview) return;
-    const validRows = importPreview.rows.filter((row) => row.state !== "error" && row.state !== "conflict").map((row) => row.values);
-    if (!validRows.length) { setError("没有可提交的有效数据"); return; }
+    const validRows = importPreview.rows.filter((row) => row.state === "new" || row.state === "update");
+    if (!validRows.length) { setError("没有可提交的有效数据，请修正参数表后重新导入"); return; }
     try {
-      const mode = importPreview.mode === "new-only" ? "insert_only" : importPreview.mode;
-      const previewPayload = await requestJson<{ importId?: string; summary?: { creates?: number; updates?: number }; errors?: string[] }>("/api/product-knowledge/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", category, mode, fileName: importPreview.fileName, rows: validRows }) });
-      if (!previewPayload.importId) throw new Error("服务器未返回导入预览ID");
-      await requestJson("/api/product-knowledge/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirm", importId: previewPayload.importId }) });
-      showNotice(`服务器已确认导入${validRows.length}条产品资料，并生成新版本`);
+      const confirmed = await requestJson<{ summary?: { creates?: number; updates?: number } }>("/api/product-knowledge/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirm", importId: importPreview.importId }) });
+      const summary = confirmed.summary || {};
+      showNotice(`已覆盖${Number(summary.updates || 0)}条、 新增${Number(summary.creates || 0)}条产品资料，并生成新版本`);
       await loadWorkspace();
       setImportPreview(null);
     } catch (reason) {
@@ -504,7 +514,7 @@ function ProductsTab({ category, products, fields, selectedProduct, activeEdit, 
   return <div className="product-library-layout">
     <div className="panel product-library-panel">
       <div className="library-toolbar"><div className="cw-search-input"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索型号、系列、SKU" /></div><div className="library-actions"><button onClick={downloadTemplate}><Download size={14} /> 下载当前模板</button><button onClick={() => importInputRef.current?.click()}><Upload size={14} /> 导入并预览</button><input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={onImportFile} /></div></div>
-      <div className="library-summary"><div><span>启用型号</span><b>{products.filter((item: ProductKnowledge) => item.status === "active").length}</b></div><div><span>自定义字段</span><b>{fields.filter((field: KnowledgeField) => field.active).length}</b></div><div><span>当前品类</span><b>{categoryName(category)}</b></div><div className="library-help"><Database size={15} /> 空白字段在“合并更新”模式下不会覆盖已有资料</div></div>
+      <div className="library-summary"><div><span>启用型号</span><b>{products.filter((item: ProductKnowledge) => item.status === "active").length}</b></div><div><span>自定义字段</span><b>{fields.filter((field: KnowledgeField) => field.active).length}</b></div><div><span>当前品类</span><b>{categoryName(category)}</b></div><div className="library-help"><Database size={15} /> 参数表按型号覆盖；未出现在表中的旧型号保留</div></div>
       <div className="pk-table-wrap"><table className="pk-table"><thead><tr><th>产品系列</th><th>标准型号</th><th>SKU</th><th>推广名</th><th>版本</th><th>更新时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{filtered.length ? filtered.map((product: ProductKnowledge) => <tr key={product.id} className={selectedProduct?.id === product.id ? "selected" : ""} onClick={() => setSelectedProduct(product)}><td>{product.series || "—"}</td><td><b>{product.model}</b></td><td>{product.sku || "—"}</td><td>{product.promotionName || "—"}</td><td>V{product.version}</td><td>{product.updatedAt}</td><td><span className={`pk-status ${product.status}`}>{product.status === "active" ? "启用" : "停用"}</span></td><td><button className="pk-row-action" onClick={(event) => { event.stopPropagation(); setActiveEdit(product); }}><Pencil size={13} /> 编辑</button></td></tr>) : <tr><td colSpan={8} className="pk-empty">暂无匹配资料</td></tr>}</tbody></table></div>
       {importPreview && <ImportPreviewPanel preview={importPreview} setPreview={setImportPreview} onCommit={onCommitImport} />}
     </div>
@@ -525,8 +535,11 @@ function ProductDetail({ product, fields, editing, onEdit, onCancel, onSave }: {
 }
 
 function ImportPreviewPanel({ preview, setPreview, onCommit }: { preview: ImportPreview; setPreview: (preview: ImportPreview | null) => void; onCommit: () => void }) {
-  const counts = { new: preview.rows.filter((row) => row.state === "new").length, update: preview.rows.filter((row) => row.state === "update").length, conflict: preview.rows.filter((row) => row.state === "conflict").length, error: preview.rows.filter((row) => row.state === "error").length };
-  return <div className="import-preview-card"><div className="import-preview-head"><div><b>导入预览</b><span>{preview.fileName} · {preview.rows.length} 行</span></div><button onClick={() => setPreview(null)} aria-label="关闭导入预览"><X size={15} /></button></div><div className="import-preview-stats"><span className="new"><b>{counts.new}</b>新增</span><span className="update"><b>{counts.update}</b>更新</span><span className="conflict"><b>{counts.conflict}</b>冲突</span><span className="error"><b>{counts.error}</b>错误</span></div><div className="import-mode-row"><label><span>覆盖策略</span><select value={preview.mode} onChange={(event) => setPreview({ ...preview, mode: event.target.value as ImportPreview["mode"] })}><option value="merge">合并更新（空白不覆盖）</option><option value="overwrite">完整覆盖（空白可清除）</option><option value="new-only">仅新增（已有不修改）</option></select></label><small>冲突和错误行不会提交，请先修正原表后重新导入。</small></div><div className="import-preview-table"><table><thead><tr><th>行</th><th>状态</th><th>标准型号</th><th>SKU</th><th>提示</th></tr></thead><tbody>{preview.rows.slice(0, 8).map((row) => <tr key={row.rowNumber}><td>{row.rowNumber}</td><td><span className={`import-row-state ${row.state}`}>{row.state === "new" ? "新增" : row.state === "update" ? "更新" : row.state === "conflict" ? "冲突" : "错误"}</span></td><td>{row.values["标准型号"] || row.values.model || "—"}</td><td>{row.values.SKU || row.values.sku || "—"}</td><td>{row.message || "—"}</td></tr>)}</tbody></table></div><div className="import-preview-actions"><button onClick={() => setPreview(null)}>取消</button><button className="primary" onClick={onCommit} disabled={!counts.new && !counts.update}>确认导入 {counts.new + counts.update} 行</button></div></div>;
+  const serverSummary = preview.summary || {};
+  const counts = { new: Number(serverSummary.creates ?? preview.rows.filter((row) => row.state === "new").length), update: Number(serverSummary.updates ?? preview.rows.filter((row) => row.state === "update").length), conflict: Number(serverSummary.conflicts ?? 0), error: Number(serverSummary.invalidRows ?? 0), skip: Number(serverSummary.skips ?? preview.rows.filter((row) => row.state === "skip").length) };
+  const newFields = preview.newFields || serverSummary.newFields || [];
+  const restoredFields = preview.restoredFields || [];
+  return <div className="import-preview-card"><div className="import-preview-head"><div><b>服务端导入预览</b><span>{preview.fileName} · {Number(serverSummary.totalRows || preview.rows.length)} 行</span></div><button onClick={() => setPreview(null)} aria-label="关闭导入预览"><X size={15} /></button></div><div className="import-preview-stats"><span className="new"><b>{counts.new}</b>新增型号</span><span className="update"><b>{counts.update}</b>覆盖型号</span><span className="conflict"><b>{counts.conflict}</b>冲突</span><span className="error"><b>{counts.error}</b>错误</span></div><div className="import-mode-row"><div><span>覆盖规则</span><strong>按表中出现的标准型号完整覆盖</strong></div><small>只覆盖本次表格中的型号；未出现在表格中的旧型号保留。表中空白单元格会清除对应型号的旧参数，新表头会在确认时自动创建字段。</small></div>{newFields.length > 0 && <div className="import-discovered-fields"><b>将新增字段</b><div>{newFields.map((field) => <span key={field.field_key}>{field.field_label}</span>)}</div></div>}{restoredFields.length > 0 && <div className="import-discovered-fields"><b>将恢复字段</b><div>{restoredFields.map((field) => <span key={field.field_key}>{field.field_label}</span>)}</div></div>}{(preview.errors?.length || preview.warnings?.length) ? <div className="import-preview-messages">{preview.errors?.slice(0, 6).map((message) => <p className="error" key={`error-${message}`}>{message}</p>)}{preview.warnings?.slice(0, 6).map((message) => <p className="warning" key={`warning-${message}`}>{message}</p>)}</div> : null}<div className="import-preview-table"><table><thead><tr><th>行</th><th>状态</th><th>标准型号</th><th>SKU</th><th>提示</th></tr></thead><tbody>{preview.rows.slice(0, 8).map((row) => <tr key={row.rowNumber}><td>{row.rowNumber}</td><td><span className={`import-row-state ${row.state}`}>{row.state === "new" ? "新增" : row.state === "update" ? "覆盖" : row.state === "skip" ? "跳过" : row.state === "conflict" ? "冲突" : "错误"}</span></td><td>{row.values["标准型号"] || row.values.canonical_model || row.values.model || "—"}</td><td>{row.values.SKU || row.values.sku || "—"}</td><td>{row.message || "—"}</td></tr>)}</tbody></table></div><div className="import-preview-actions"><button onClick={() => setPreview(null)}>取消</button><button className="primary" onClick={onCommit} disabled={!counts.new && !counts.update}>确认覆盖 {counts.new + counts.update} 行</button></div></div>;
 }
 
 function PoliciesTab({ category, products, policies, onPolicies, onNotice }: { category: ProductCategory; products: ProductKnowledge[]; policies: Policy[]; onPolicies: (policies: Policy[]) => void; onNotice: (message: string) => void }) {

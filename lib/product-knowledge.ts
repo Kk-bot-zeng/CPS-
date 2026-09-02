@@ -89,12 +89,30 @@ export function isBlank(value: unknown): boolean {
 }
 
 export function keyFromLabel(label: unknown): string {
+  // Spreadsheet headers are often Chinese (or contain punctuation).  A
+  // timestamp-only key made repeated imports unstable and could collide when
+  // two columns were discovered in the same millisecond.  Keep an ASCII slug
+  // where possible and add a deterministic short hash for every label so the
+  // same header maps to the same field on the next import.
   const raw = String(label ?? "").trim().toLowerCase();
-  const key = raw
+  let hash = 2166136261;
+  for (let index = 0; index < raw.length; index += 1) {
+    hash ^= raw.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hashSuffix = (hash >>> 0).toString(36).slice(0, 8);
+  const slug = raw
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
-    .slice(0, 56);
-  return /^[a-z]/.test(key) ? key : `field_${key || Date.now().toString(36)}`;
+    .slice(0, 46);
+  const prefix = /^[a-z]/.test(slug) ? slug : `field_${slug || "column"}`;
+  return `${prefix}_${hashSuffix}`.slice(0, 64);
+}
+
+/** Return the canonical key used by the importer for a spreadsheet header. */
+export function canonicalImportKey(value: unknown): string {
+  const key = String(value ?? "").trim();
+  return aliases[key] || aliases[key.toLowerCase()] || key;
 }
 
 export function isValidFieldKey(value: unknown): value is string {
@@ -138,7 +156,7 @@ export function mapImportKeys(row: Record<string, unknown>): Record<string, unkn
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (IMPORT_META_KEYS.has(key)) continue;
-    const canonicalKey = aliases[key] || key;
+    const canonicalKey = canonicalImportKey(key);
     // Keep the first non-empty value if a spreadsheet contains both an English
     // and a Chinese alias for the same column.
     if (!(canonicalKey in result) || isBlank(result[canonicalKey])) result[canonicalKey] = value;

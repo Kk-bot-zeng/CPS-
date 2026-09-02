@@ -3,12 +3,15 @@ import { requireApiUser } from "@/lib/api-auth";
 import { pool } from "@/lib/db";
 import {
   FIXED_PRODUCT_FIELDS,
+  canonicalImportKey,
   cleanStatus,
   cleanText,
   createProductVersion,
   errorMessage,
   isBlank,
+  isValidFieldKey,
   isProductCategory,
+  keyFromLabel,
   mapImportKeys,
   mergeCustomValues,
   normalizeModel,
@@ -24,6 +27,7 @@ import {
 export const runtime = "nodejs";
 const MAX_IMPORT_ROWS = 20_000;
 const MAX_CUSTOM_FIELDS = 100;
+const IMPORT_META_KEYS = new Set(["__rowNum__", "__rowNum", "rowNum", "序号", "index"]);
 
 type NormalizedImportRow = {
   rowNumber: number;
@@ -37,6 +41,8 @@ type NormalizedImportRow = {
   custom_values: Record<string, unknown>;
 };
 
+type ImportField = Omit<ProductField, "id"> & { id?: string };
+
 type ImportSummary = {
   totalRows: number;
   validRows: number;
@@ -46,6 +52,7 @@ type ImportSummary = {
   updates: number;
   skips: number;
   conflicts: number;
+  newFields: Array<{ field_key: string; field_label: string; field_type: string }>;
 };
 
 function categoryValue(value: unknown, fallback: ProductCategory): ProductCategory | null {
@@ -85,8 +92,125 @@ function validFieldValue(value: unknown, field: ProductField): string | null {
   return null;
 }
 
+function comparableHeader(value: unknown) {
+  return String(value ?? "").trim().toLocaleLowerCase();
+}
+
+function isEmptySpreadsheetHeader(value: unknown) {
+  const header = String(value ?? "").trim();
+  return !header || /^__empty(?:_\d+)?$/i.test(header) || /^unnamed(?::\s*\d+)?$/i.test(header);
+}
+
+function importHeaders(rows: unknown[], suppliedHeaders: unknown) {
+  if (Array.isArray(suppliedHeaders)) return suppliedHeaders.map((header) => String(header ?? ""));
+  const union = new Set<string>();
+  rows.forEach((source) => {
+    if (source && typeof source === "object" && !Array.isArray(source)) Object.keys(source as Record<string, unknown>).forEach((key) => union.add(key));
+  });
+  return [...union];
+}
+
+function withUniqueFieldKey(base: string, used: Set<string>) {
+  let key = base;
+  let suffix = 2;
+  while (used.has(key) || !isValidFieldKey(key)) {
+    const tail = `_${suffix}`;
+    key = `${base.slice(0, Math.max(2, 64 - tail.length))}${tail}`;
+    suffix += 1;
+  }
+  used.add(key);
+  return key;
+}
+
+function prepareImportFields(
+  headers: string[],
+  category: ProductCategory,
+  fields: ProductField[],
+  autoCreateFields: boolean,
+) {
+  const fixedKeys = new Set(FIXED_PRODUCT_FIELDS.map((field) => field.key));
+  const active = fields.filter((field) => field.active);
+  const inactive = fields.filter((field) => !field.active);
+  const usedKeys = new Set([...fixedKeys, ...fields.map((field) => field.field_key)]);
+  const labelMap = new Map<string, ProductField>();
+  [...active].forEach((field) => {
+    labelMap.set(comparableHeader(field.field_key), field);
+    labelMap.set(comparableHeader(field.field_label), field);
+  });
+  const inactiveMap = new Map<string, ProductField>();
+  inactive.forEach((field) => {
+    inactiveMap.set(comparableHeader(field.field_key), field);
+    inactiveMap.set(comparableHeader(field.field_label), field);
+  });
+  const seenHeaders = new Set<string>();
+  const errors: string[] = [];
+  const newFields: ProductField[] = [];
+  const reactivateFields: ProductField[] = [];
+  const reactivateKeys = new Set<string>();
+  const parseFields: ProductField[] = [...active];
+  for (const header of headers) {
+    if (isEmptySpreadsheetHeader(header)) {
+      errors.push("表头不能为空，请删除空白列后重新导入");
+      continue;
+    }
+    const canonical = canonicalImportKey(header);
+    if (FIXED_PRODUCT_FIELDS.some((field) => field.key === canonical) || IMPORT_META_KEYS.has(header)) {
+      const duplicateKey = `fixed:${comparableHeader(canonical)}`;
+      if (seenHeaders.has(duplicateKey)) errors.push(`表头重复：“${header}”`);
+      seenHeaders.add(duplicateKey);
+      continue;
+    }
+    const lookup = comparableHeader(header);
+    if (seenHeaders.has(`field:${lookup}`)) {
+      errors.push(`表头重复：“${header}”`);
+      continue;
+    }
+    seenHeaders.add(`field:${lookup}`);
+    if (labelMap.has(lookup)) continue;
+    if (inactiveMap.has(lookup)) {
+      const field = inactiveMap.get(lookup)!;
+      // A parameter sheet is an authoritative schema input.  Reusing a
+      // previously disabled header should restore that field as part of the
+      // same confirmation transaction instead of creating a duplicate field.
+      const restored = { ...field, active: true };
+      if (!reactivateKeys.has(field.field_key)) {
+        reactivateFields.push(field);
+        reactivateKeys.add(field.field_key);
+      }
+      parseFields.push(restored);
+      labelMap.set(lookup, restored);
+      continue;
+    }
+    if (!autoCreateFields) {
+      errors.push(`未知字段“${header}”，本次导入不会自动创建字段`);
+      continue;
+    }
+    const fieldKey = withUniqueFieldKey(keyFromLabel(header), usedKeys);
+    const field: ProductField = {
+      id: "",
+      product_category: category,
+      field_key: fieldKey,
+      field_label: cleanText(header, 80) || "未命名字段",
+      field_type: "text",
+      options: [],
+      required: false,
+      active: true,
+      sort_order: fields.length + newFields.length,
+      notes: null,
+    };
+    newFields.push(field);
+    labelMap.set(lookup, field);
+    labelMap.set(comparableHeader(field.field_key), field);
+  }
+  return { activeFields: [...parseFields, ...newFields], newFields, reactivateFields, errors };
+}
+
 function parseRows(rows: unknown[], category: ProductCategory, fields: ProductField[]) {
-  const labelMap = new Map(fields.filter((field) => field.active).flatMap((field) => [[field.field_key, field], [field.field_label, field]]));
+  const labelMap = new Map<string, ProductField>();
+  fields.filter((field) => field.active).forEach((field) => {
+    labelMap.set(comparableHeader(field.field_key), field);
+    labelMap.set(comparableHeader(field.field_label), field);
+  });
   const errors: string[] = [];
   const warnings: string[] = [];
   const valid: NormalizedImportRow[] = [];
@@ -107,7 +231,7 @@ function parseRows(rows: unknown[], category: ProductCategory, fields: ProductFi
     }
     for (const [key, value] of Object.entries(row)) {
       if (["product_category", "product_series", "canonical_model", "sku", "promotion_name", "status", "custom_values", "customValues"].includes(key)) continue;
-      const field = labelMap.get(key);
+      const field = labelMap.get(comparableHeader(key));
       if (!field) { errors.push(`第${rowNumber}行：未知或已停用字段“${key}”`); continue; }
       custom[field.field_key] = optionValue(value, field);
     }
@@ -136,12 +260,12 @@ function parseRows(rows: unknown[], category: ProductCategory, fields: ProductFi
   return { rows: [...deduped.values()], errors, warnings, duplicateRows: valid.length - deduped.size };
 }
 
-async function fieldsFor(category: ProductCategory) {
+async function fieldsFor(category: ProductCategory, includeInactive = false) {
   const { rows } = await pool.query<ProductField>(
     `select id, product_category, field_key, field_label, field_type, options,
             required, active, sort_order, notes, created_at, updated_at
        from public.product_knowledge_fields
-      where product_category = $1 and active = true
+      where product_category = $1${includeInactive ? "" : " and active = true"}
       order by sort_order asc, field_label asc`, [category],
   );
   return rows;
@@ -160,26 +284,44 @@ async function existingByKeys(category: ProductCategory, keys: string[]) {
   return new Map(rows.map((row) => [row.canonical_model_normalized, row]));
 }
 
-function countPlan(rows: NormalizedImportRow[], existing: Map<string, ProductRecord>, mode: ImportMode): ImportSummary {
+function countPlan(rows: NormalizedImportRow[], existing: Map<string, ProductRecord>, mode: ImportMode, newFields: ProductField[] = []): ImportSummary {
   let creates = 0; let updates = 0; let skips = 0;
   for (const row of rows) {
     if (!existing.has(row.canonical_model_normalized)) creates += 1;
     else if (mode === "insert_only") skips += 1;
     else updates += 1;
   }
-  return { totalRows: rows.length, validRows: rows.length, invalidRows: 0, duplicateRows: 0, creates, updates, skips, conflicts: 0 };
+  return {
+    totalRows: rows.length,
+    validRows: rows.length,
+    invalidRows: 0,
+    duplicateRows: 0,
+    creates,
+    updates,
+    skips,
+    conflicts: 0,
+    newFields: newFields.map((field) => ({ field_key: field.field_key, field_label: field.field_label, field_type: field.field_type })),
+  };
 }
 
 async function preview(body: Record<string, unknown>, userId: string) {
   const category = parseCategory(body.category ?? body.product_category);
   if (!category) return NextResponse.json({ error: "请选择有效品类" }, { status: 400 });
+  // The product-parameter UI always uses full coverage.  Keep the three API
+  // modes for existing integrations, but make the safe default overwrite so a
+  // plain upload has the requested semantics.
   const mode = body.mode === undefined || body.mode === null || body.mode === ""
-    ? "merge" as const
+    ? "overwrite" as const
     : parseImportMode(body.mode);
   if (!mode) return NextResponse.json({ error: "导入模式只能是insert_only、merge或overwrite" }, { status: 400 });
   const sourceRows = body.rows;
   if (!Array.isArray(sourceRows) || !sourceRows.length || sourceRows.length > MAX_IMPORT_ROWS) return NextResponse.json({ error: `每次请导入1至${MAX_IMPORT_ROWS}条数据` }, { status: 400 });
-  const fields = await fieldsFor(category);
+  const suppliedHeaders = importHeaders(sourceRows, body.headers);
+  const allFields = await fieldsFor(category, true);
+  const autoCreateFields = body.autoCreateFields === true || mode === "overwrite";
+  const prepared = prepareImportFields(suppliedHeaders, category, allFields, autoCreateFields);
+  if (prepared.errors.length) return NextResponse.json({ error: "参数表头校验失败", errors: prepared.errors.slice(0, 200) }, { status: 400 });
+  const fields = prepared.activeFields;
   const parsed = parseRows(sourceRows, category, fields);
   const existing = await existingByKeys(category, parsed.rows.map((row) => row.canonical_model_normalized));
   const requiredFields = fields.filter((field) => field.active && field.required);
@@ -194,12 +336,12 @@ async function preview(body: Record<string, unknown>, userId: string) {
     return true;
   });
   parsed.rows = rowsWithRequired;
-  const summary = countPlan(parsed.rows, existing, mode);
+  const summary = countPlan(parsed.rows, existing, mode, prepared.newFields);
   summary.totalRows = sourceRows.length;
   summary.invalidRows = parsed.errors.length;
   summary.duplicateRows = parsed.duplicateRows;
   const fileName = cleanText(body.fileName ?? body.file_name, 240) || "产品资料库.xlsx";
-  const schemaSnapshot = { fixedFields: FIXED_PRODUCT_FIELDS, fields };
+  const schemaSnapshot = { fixedFields: FIXED_PRODUCT_FIELDS, fields, newFields: prepared.newFields, reactivateFields: prepared.reactivateFields };
   const { rows } = await pool.query<{ id: string }>(
     `insert into public.product_knowledge_imports
       (product_category, file_name, mode, status, "rows", schema_snapshot, summary, created_by)
@@ -216,8 +358,25 @@ async function preview(body: Record<string, unknown>, userId: string) {
     errors: parsed.errors.slice(0, 200),
     warnings: parsed.warnings.slice(0, 200),
     fields: schemaSnapshot,
+    newFields: prepared.newFields.map((field) => ({ field_key: field.field_key, field_label: field.field_label, field_type: field.field_type })),
+    restoredFields: prepared.reactivateFields.map((field) => ({ field_key: field.field_key, field_label: field.field_label })),
     // A small preview is enough for UI confirmation; all normalized rows stay server-side.
-    previewRows: parsed.rows.slice(0, 100),
+    previewRows: parsed.rows.slice(0, 100).map((row) => {
+      const existingRow = existing.get(row.canonical_model_normalized);
+      return {
+        rowNumber: row.rowNumber,
+        state: existingRow ? (mode === "insert_only" ? "skip" : "update") : "new",
+        values: {
+          product_category: row.product_category,
+          product_series: row.product_series || "",
+          canonical_model: row.canonical_model,
+          sku: row.sku || "",
+          promotion_name: row.promotion_name || "",
+          status: row.status || "",
+          ...Object.fromEntries(fields.filter((field) => !FIXED_PRODUCT_FIELDS.some((fixed) => fixed.key === field.field_key)).map((field) => [field.field_label, row.custom_values[field.field_key] ?? ""])),
+        },
+      };
+    }),
   }, { status: 201 });
 }
 
@@ -228,9 +387,9 @@ async function confirm(importId: string, userId: string) {
     await client.query("begin");
     const { rows: importRows } = await client.query<{
       id: string; product_category: ProductCategory; mode: ImportMode; status: string;
-      rows: NormalizedImportRow[]; file_name: string; summary: ImportSummary; expires_at: string;
+      rows: NormalizedImportRow[]; file_name: string; summary: ImportSummary; schema_snapshot: { fields?: ImportField[]; newFields?: ImportField[]; reactivateFields?: ImportField[] }; expires_at: string;
     }>(
-      `select id, product_category, mode, status, "rows", file_name, summary, expires_at
+      `select id, product_category, mode, status, "rows", file_name, summary, schema_snapshot, expires_at
          from public.product_knowledge_imports
         where id = $1 and created_by = $2
         for update`, [importId, userId],
@@ -242,6 +401,49 @@ async function confirm(importId: string, userId: string) {
       await client.query(`update public.product_knowledge_imports set status = 'expired' where id = $1`, [importId]);
       await client.query("commit");
       return NextResponse.json({ error: "导入预览已过期，请重新上传" }, { status: 410 });
+    }
+    // Field creation is part of the same transaction as product updates.  A
+    // preview never mutates the schema, and a failed confirmation rolls back
+    // both the new fields and all product/version writes.
+    const pendingFields = item.schema_snapshot?.newFields || [];
+    for (const pending of pendingFields) {
+      if (!pending.field_key || !isValidFieldKey(pending.field_key) || !pending.field_label) {
+        throw new Error(`导入字段“${pending.field_label || pending.field_key || "未命名"}”不合法，请重新预览`);
+      }
+      const { rows: existingFields } = await client.query<ProductField>(
+        `select id, product_category, field_key, field_label, field_type, options,
+                required, active, sort_order, notes, created_at, updated_at
+           from public.product_knowledge_fields
+          where product_category = $1 and field_key = $2
+          for update`, [item.product_category, pending.field_key],
+      );
+      if (existingFields[0]) {
+        if (existingFields[0].field_label !== pending.field_label) {
+          throw new Error(`字段标识“${pending.field_key}”已被其他字段占用，请重新预览`);
+        }
+        continue;
+      }
+      await client.query(
+        `insert into public.product_knowledge_fields
+          (product_category, field_key, field_label, field_type, options, required, active, sort_order, created_by)
+         values ($1, $2, $3, $4, $5::jsonb, false, true, $6, $7)`,
+        [item.product_category, pending.field_key, pending.field_label, pending.field_type || "text", JSON.stringify(pending.options || []), pending.sort_order || 0, userId],
+      );
+    }
+    for (const pending of item.schema_snapshot?.reactivateFields || []) {
+      const { rows: existingFields } = await client.query<ProductField>(
+        `select id, product_category, field_key, field_label, field_type, options,
+                required, active, sort_order, notes, created_at, updated_at
+           from public.product_knowledge_fields
+          where product_category = $1 and field_key = $2
+          for update`, [item.product_category, pending.field_key],
+      );
+      if (!existingFields[0] || existingFields[0].field_label !== pending.field_label) {
+        throw new Error(`待恢复字段“${pending.field_label}”已发生变化，请重新预览导入`);
+      }
+      if (!existingFields[0].active) {
+        await client.query(`update public.product_knowledge_fields set active = true, updated_at = now() where id = $1`, [existingFields[0].id]);
+      }
     }
     const fieldsResult = await client.query<ProductField>(
       `select id, product_category, field_key, field_label, field_type, options,
