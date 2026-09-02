@@ -206,8 +206,12 @@ function limitDraftSection(content: string, targetLength: number) {
   }
   if (count <= hardLimit) return content;
   const punctuation = Math.max(limited.lastIndexOf("。"), limited.lastIndexOf("！"), limited.lastIndexOf("？"), limited.lastIndexOf("；"));
+  const lineBreak = limited.lastIndexOf("\n");
   const minimumUsefulLength = Math.floor(targetLength * 0.6);
-  const safeDraft = punctuation >= minimumUsefulLength ? limited.slice(0, punctuation + 1) : limited;
+  const safeBoundary = Math.max(punctuation, lineBreak);
+  const safeDraft = safeBoundary >= minimumUsefulLength
+    ? limited.slice(0, safeBoundary + (safeBoundary === punctuation ? 1 : 0))
+    : limited;
   return `${content.slice(0, start + startToken.length)}${safeDraft.trimEnd()}\n${content.slice(end)}`;
 }
 
