@@ -207,7 +207,10 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
     setError("");
     try {
       const [productPayload, fieldPayload, policyPayload, historyPayload] = await Promise.allSettled([
-        requestJson<any>(`/api/product-knowledge?category=${category}&pageSize=200`),
+        // The library defaults to the active catalog.  Inactive records remain
+        // available through the product/version APIs, but should not make a
+        // completed bulk delete look like it failed in the main table.
+        requestJson<any>(`/api/product-knowledge?category=${category}&status=active&pageSize=200`),
         requestJson<any>(`/api/product-knowledge/fields?category=${category}&includeInactive=true`),
         requestJson<any>(`/api/product-knowledge/policies?category=${category}`),
         requestJson<any>(`/api/copywriting/history?category=${category}`),
@@ -276,6 +279,27 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
       setActiveEdit(null);
       showNotice("产品资料已保存");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "产品资料保存失败，数据库未发生变更"); }
+  }
+
+  async function bulkDeleteProducts(productIds: string[]) {
+    if (!productIds.length) return { deleted: 0, ignored: 0 };
+    setError("");
+    try {
+      const result = await requestJson<{ deleted?: number; ignored?: number; deletedIds?: string[] }>("/api/product-knowledge/bulk-delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, ids: productIds }),
+      });
+      await loadWorkspace();
+      const deleted = Number(result.deleted || 0);
+      const ignored = Number(result.ignored || 0);
+      showNotice(ignored ? `已停用${deleted}条产品资料，忽略${ignored}条（已停用或品类不匹配）` : `已停用${deleted}条产品资料，历史版本已保留`);
+      return { deleted, ignored };
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "批量删除失败，数据库未发生变更";
+      setError(message);
+      throw reason;
+    }
   }
 
   function downloadTemplate() {
@@ -417,7 +441,7 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
       {notice && <div className="cw-notice"><CheckCircle2 size={15} /> {notice}</div>}
       {error && <div className="cw-error-banner"><AlertCircle size={15} /> <span>{error}</span><button onClick={() => setError("")} aria-label="关闭提示"><X size={14} /></button></div>}
       {tab === "generator" && <GeneratorTab category={category} channel={channel} products={activeProducts} fields={activeFields} policies={policies} history={copyHistory} onHistory={(entry) => setCopyHistory((current) => [entry, ...current].slice(0, 30))} />}
-      {tab === "products" && <ProductsTab category={category} products={products} fields={fields} selectedProduct={selectedProduct} activeEdit={activeEdit} importPreview={importPreview} importInputRef={importInputRef} newField={newField} setNewField={setNewField} setSelectedProduct={setSelectedProduct} setActiveEdit={setActiveEdit} setImportPreview={setImportPreview} onImportFile={onImportFile} onCommitImport={commitImport} downloadTemplate={downloadTemplate} onUpdateProduct={updateProduct} onAddField={addField} onToggleField={toggleField} />}
+      {tab === "products" && <ProductsTab category={category} products={products} fields={fields} selectedProduct={selectedProduct} activeEdit={activeEdit} importPreview={importPreview} importInputRef={importInputRef} newField={newField} setNewField={setNewField} setSelectedProduct={setSelectedProduct} setActiveEdit={setActiveEdit} setImportPreview={setImportPreview} onImportFile={onImportFile} onCommitImport={commitImport} downloadTemplate={downloadTemplate} onUpdateProduct={updateProduct} onAddField={addField} onToggleField={toggleField} onBulkDelete={bulkDeleteProducts} />}
       {tab === "policies" && <PoliciesTab category={category} products={products} policies={policies} onPolicies={setPolicies} onNotice={showNotice} />}
       {tab === "versions" && <VersionsTab category={category} versions={versions} onRollback={rollback} />}
       {tab === "history" && <HistoryTab history={copyHistory} />}
@@ -507,15 +531,70 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   );
 }
 
-function ProductsTab({ category, products, fields, selectedProduct, activeEdit, importPreview, importInputRef, newField, setNewField, setSelectedProduct, setActiveEdit, setImportPreview, onImportFile, onCommitImport, downloadTemplate, onUpdateProduct, onAddField, onToggleField }: any) {
+function ProductsTab({ category, products, fields, selectedProduct, activeEdit, importPreview, importInputRef, newField, setNewField, setSelectedProduct, setActiveEdit, setImportPreview, onImportFile, onCommitImport, downloadTemplate, onUpdateProduct, onAddField, onToggleField, onBulkDelete }: any) {
   const [query, setQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const filtered = products.filter((product: ProductKnowledge) => `${product.model} ${product.series} ${product.sku} ${product.promotionName}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredIds = filtered.map((product: ProductKnowledge) => product.id);
+  const selectedVisibleCount = filteredIds.filter((id: string) => selectedIds.includes(id)).length;
+  const allVisibleSelected = filteredIds.length > 0 && selectedVisibleCount === filteredIds.length;
+
+  useEffect(() => {
+    const productIds = new Set(products.map((product: ProductKnowledge) => product.id));
+    setSelectedIds((current) => current.filter((id) => productIds.has(id)));
+  }, [products]);
+
+  useEffect(() => {
+    // A category switch is a new selection context.  Do not carry UUIDs from
+    // the previous catalog into the next one, even while its request loads.
+    setSelectedIds([]);
+    setQuery("");
+  }, [category]);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected;
+    }
+  }, [selectedVisibleCount, allVisibleSelected]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function toggleAllVisible() {
+    if (deleting) return;
+    setSelectedIds((current) => {
+      if (allVisibleSelected) return current.filter((id) => !filteredIds.includes(id));
+      return [...new Set([...current, ...filteredIds])];
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (deleting || !selectedIds.length) return;
+    const confirmed = window.confirm(`确定批量删除已选的 ${selectedIds.length} 条产品资料？\n\n系统将执行安全停用，历史版本和参数不会物理删除；停用型号也不会再出现在文案生成的默认选择中。`);
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onBulkDelete(selectedIds);
+      setSelectedIds([]);
+      setSelectedProduct(null);
+      setActiveEdit(null);
+    } catch {
+      // The parent displays the server error; keep the selection for retry.
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const newFieldTypes: { value: KnowledgeField["type"]; label: string }[] = [{ value: "text", label: "文本" }, { value: "number", label: "数字" }, { value: "date", label: "日期" }, { value: "select", label: "单选" }, { value: "multiselect", label: "多选" }, { value: "longtext", label: "长文本" }];
   return <div className="product-library-layout">
     <div className="panel product-library-panel">
-      <div className="library-toolbar"><div className="cw-search-input"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索型号、系列、SKU" /></div><div className="library-actions"><button onClick={downloadTemplate}><Download size={14} /> 下载当前模板</button><button onClick={() => importInputRef.current?.click()}><Upload size={14} /> 导入并预览</button><input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={onImportFile} /></div></div>
+      <div className="library-toolbar"><div className="cw-search-input"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索型号、系列、SKU" /></div><div className="library-actions"><button onClick={downloadTemplate}><Download size={14} /> 下载当前模板</button><button onClick={() => importInputRef.current?.click()}><Upload size={14} /> 导入并预览</button><button className="pk-bulk-delete" onClick={() => void handleBulkDelete()} disabled={!selectedIds.length || deleting} title="批量安全停用，历史版本会保留"><Trash2 size={14} /> {deleting ? "处理中…" : `批量删除${selectedIds.length ? `（${selectedIds.length}）` : ""}`}</button><input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={onImportFile} /></div></div>
+      {selectedIds.length > 0 && <div className="pk-selection-bar"><span><CheckCircle2 size={14} /> 已选择 <b>{selectedIds.length}</b> 条产品资料 · 当前筛选结果 {filtered.length} 条</span><button onClick={() => setSelectedIds([])} disabled={deleting}>清空选择</button></div>}
       <div className="library-summary"><div><span>启用型号</span><b>{products.filter((item: ProductKnowledge) => item.status === "active").length}</b></div><div><span>自定义字段</span><b>{fields.filter((field: KnowledgeField) => field.active).length}</b></div><div><span>当前品类</span><b>{categoryName(category)}</b></div><div className="library-help"><Database size={15} /> 参数表按型号覆盖；未出现在表中的旧型号保留</div></div>
-      <div className="pk-table-wrap"><table className="pk-table"><thead><tr><th>产品系列</th><th>标准型号</th><th>SKU</th><th>推广名</th><th>版本</th><th>更新时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{filtered.length ? filtered.map((product: ProductKnowledge) => <tr key={product.id} className={selectedProduct?.id === product.id ? "selected" : ""} onClick={() => setSelectedProduct(product)}><td>{product.series || "—"}</td><td><b>{product.model}</b></td><td>{product.sku || "—"}</td><td>{product.promotionName || "—"}</td><td>V{product.version}</td><td>{product.updatedAt}</td><td><span className={`pk-status ${product.status}`}>{product.status === "active" ? "启用" : "停用"}</span></td><td><button className="pk-row-action" onClick={(event) => { event.stopPropagation(); setActiveEdit(product); }}><Pencil size={13} /> 编辑</button></td></tr>) : <tr><td colSpan={8} className="pk-empty">暂无匹配资料</td></tr>}</tbody></table></div>
+      <div className="pk-table-wrap"><table className="pk-table"><thead><tr><th className="pk-select-col"><input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={!filtered.length || deleting} aria-label="全选当前筛选结果" /></th><th>产品系列</th><th>标准型号</th><th>SKU</th><th>推广名</th><th>版本</th><th>更新时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{filtered.length ? filtered.map((product: ProductKnowledge) => <tr key={product.id} className={`${selectedProduct?.id === product.id ? "selected" : ""} ${selectedIds.includes(product.id) ? "checked" : ""}`} onClick={() => setSelectedProduct(product)}><td className="pk-select-col" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggleSelected(product.id)} disabled={deleting} aria-label={`选择${product.model}`} /></td><td>{product.series || "—"}</td><td><b>{product.model}</b></td><td>{product.sku || "—"}</td><td>{product.promotionName || "—"}</td><td>V{product.version}</td><td>{product.updatedAt}</td><td><span className={`pk-status ${product.status}`}>{product.status === "active" ? "启用" : "停用"}</span></td><td><button className="pk-row-action" onClick={(event) => { event.stopPropagation(); setActiveEdit(product); }}><Pencil size={13} /> 编辑</button></td></tr>) : <tr><td colSpan={9} className="pk-empty">暂无匹配资料</td></tr>}</tbody></table></div>
       {importPreview && <ImportPreviewPanel preview={importPreview} setPreview={setImportPreview} onCommit={onCommitImport} />}
     </div>
     <aside className="product-side-column">

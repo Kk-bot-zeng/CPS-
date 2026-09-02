@@ -175,6 +175,12 @@ async function main() {
   await expect("未登录请求被拒绝", async () => {
     const result = await request("/api/product-knowledge?category=tv", { auth: false });
     expectStatus(result, 401);
+    const bulkResult = await request("/api/product-knowledge/bulk-delete", {
+      method: "DELETE",
+      auth: false,
+      body: { category: "tv", ids: ["00000000-0000-0000-0000-000000000000"] },
+    });
+    expectStatus(bulkResult, 401);
   });
 
   await expect("本地测试账号登录并取得会话", async () => {
@@ -209,6 +215,53 @@ async function main() {
     assert.equal(tv.product_category, "tv");
     assert.equal(monitor.product_category, "monitor");
     assert.notEqual(tv.id, monitor.id);
+  });
+
+  await expect("批量停用按品类加锁、忽略停用/跨品类并保留版本", async () => {
+    const batchActive = await createProduct("tv", `QA批量停用-${stamp}`);
+    const batchInactive = await createProduct("tv", `QA批量已停用-${stamp}`);
+    const crossCategory = await createProduct("monitor", `QA批量跨品类-${stamp}`);
+    const inactiveResult = await request(`/api/product-knowledge/${encodeURIComponent(batchInactive.id)}`, { method: "DELETE" });
+    expectStatus(inactiveResult, 200);
+
+    const beforeDetails = await request(`/api/product-knowledge/${encodeURIComponent(batchActive.id)}`);
+    expectStatus(beforeDetails, 200);
+    const beforeVersionCount = beforeDetails.body.versions.length;
+    const result = await request("/api/product-knowledge/bulk-delete", {
+      method: "DELETE",
+      body: { category: "tv", ids: [batchActive.id, batchInactive.id, crossCategory.id] },
+    });
+    expectStatus(result, 200);
+    assert.equal(result.body.requested, 3);
+    assert.equal(result.body.deleted, 1);
+    assert.equal(result.body.ignored, 2);
+    assert.deepEqual(result.body.deletedIds, [batchActive.id]);
+
+    const afterDetails = await request(`/api/product-knowledge/${encodeURIComponent(batchActive.id)}`);
+    expectStatus(afterDetails, 200);
+    assert.equal(afterDetails.body.product.status, "inactive");
+    assert.equal(afterDetails.body.versions.length, beforeVersionCount + 1);
+    assert.equal(afterDetails.body.versions[0].source, "manual");
+    assert.match(afterDetails.body.versions[0].note, /批量安全停用/);
+
+    const otherCategory = await getProduct(crossCategory.id);
+    assert.equal(otherCategory.status, "active", "跨品类ID不应被停用");
+    const activeList = await request(`/api/product-knowledge?category=tv&status=active&q=${encodeURIComponent(batchActive.canonical_model)}`);
+    expectStatus(activeList, 200);
+    assert.ok(!activeList.body.products.some((item) => item.id === batchActive.id), "已停用型号不应出现在启用资料库列表");
+  });
+
+  await expect("批量停用校验1至500个有效UUID", async () => {
+    const invalid = await request("/api/product-knowledge/bulk-delete", {
+      method: "DELETE",
+      body: { category: "tv", ids: ["not-a-uuid"] },
+    });
+    expectStatus(invalid, 400);
+    const tooMany = await request("/api/product-knowledge/bulk-delete", {
+      method: "DELETE",
+      body: { category: "tv", ids: Array.from({ length: 501 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`) },
+    });
+    expectStatus(tooMany, 400);
   });
 
   await expect("产品列表按品类隔离", async () => {
@@ -419,6 +472,46 @@ async function main() {
     const old = policies.body.policies.find((item) => item.id === expiredPolicyId);
     assert.equal(current.effective_now, true);
     assert.equal(old.effective_now, false);
+  });
+
+  await expect("产品资料支持按品类批量安全停用并保留版本", async () => {
+    const batchA = await createProduct("tv", `QA批量停用A-${stamp}`, {}, { sku: `BULK-A-${stamp}` });
+    const batchB = await createProduct("tv", `QA批量停用B-${stamp}`, {}, { sku: `BULK-B-${stamp}` });
+    const result = await request("/api/product-knowledge/bulk-delete", {
+      method: "DELETE",
+      body: { category: "tv", ids: [batchA.id, batchB.id, monitor.id] },
+    });
+    expectStatus(result, 200);
+    assert.equal(result.body.deleted, 2);
+    assert.equal(result.body.ignored, 1, "其他品类产品应被忽略");
+    assert.deepEqual(new Set(result.body.deletedIds), new Set([batchA.id, batchB.id]));
+    assert.ok(result.body.versions?.length === 2, "每个实际停用产品都应生成版本");
+
+    const currentA = await getProduct(batchA.id);
+    const currentB = await getProduct(batchB.id);
+    assert.equal(currentA.status, "inactive");
+    assert.equal(currentB.status, "inactive");
+    const versions = await request(`/api/product-knowledge/versions?productId=${encodeURIComponent(batchA.id)}`);
+    expectStatus(versions, 200);
+    assert.equal(versions.body.versions[0].source, "manual");
+    assert.equal(versions.body.versions[0].snapshot.status, "inactive");
+
+    const repeat = await request("/api/product-knowledge/bulk-delete", {
+      method: "DELETE",
+      body: { category: "tv", ids: [batchA.id, batchB.id] },
+    });
+    expectStatus(repeat, 200);
+    assert.equal(repeat.body.deleted, 0);
+    assert.equal(repeat.body.ignored, 2);
+  });
+
+  await expect("批量停用输入边界与UUID校验正确", async () => {
+    const missingCategory = await request("/api/product-knowledge/bulk-delete", { method: "DELETE", body: { ids: [tv.id] } });
+    expectStatus(missingCategory, 400);
+    const invalidId = await request("/api/product-knowledge/bulk-delete", { method: "DELETE", body: { category: "tv", ids: ["not-a-uuid"] } });
+    expectStatus(invalidId, 400);
+    const tooMany = await request("/api/product-knowledge/bulk-delete", { method: "DELETE", body: { category: "tv", ids: Array.from({ length: 501 }, () => tv.id) } });
+    expectStatus(tooMany, 400);
   });
 
   await expect("字段停用保留历史定义，可重新启用", async () => {
