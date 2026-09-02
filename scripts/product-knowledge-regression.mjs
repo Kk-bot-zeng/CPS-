@@ -648,6 +648,8 @@ async function main() {
       assert.ok(content, "AI 返回为空");
       assert.ok(content.includes(model), "文案未体现所选型号");
       assert.ok(!content.includes(expiredMarker), "文案引用了过期政策标记");
+      assert.match(content, /【文案草稿】\n/, "文案草稿标题应独占一行");
+      assert.match(content, /[📣📺💰🔥✨🎉✅⏰👉]/u, "文案应包含适量的功能性表情");
       const draft = content.split("【待确认事项】")[0].replace(/\s/g, "");
       assert.ok(draft.length <= 90, `50字模式输出过长：${draft.length} 字`);
     });
