@@ -326,7 +326,7 @@ function BilibiliDashboard({ category }: { category: ProductCategory }) {
     </div>}
     <div className="monitor-dashboard-shell" hidden={category !== "monitor"}>
       <div className="monitor-dashboard-head"><div><h2>显示器 · B站操盘看板</h2><p>完整保留显示器原看板的数据口径、分析方式与下钻模式</p></div><span>数据截至 2026-08-13</span></div>
-      <iframe ref={frameRef} className="monitor-dashboard-frame" src="/monitor-dashboard/" title="显示器CPS达人全链路操盘看板" scrolling="no" style={{height:frameHeight}} />
+      <iframe ref={frameRef} className="monitor-dashboard-frame" src="/monitor-dashboard/?v=20260902-interactions" title="显示器CPS达人全链路操盘看板" scrolling="no" style={{height:frameHeight}} />
     </div>
   </>;
 }
