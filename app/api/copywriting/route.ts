@@ -71,7 +71,7 @@ async function saveGenerationHistory(
 async function loadProductGrounding(body: Record<string, unknown>, category: string, channel: string) {
   const productIds = idsFromBody(body, "productIds", "productId");
   if (!productIds.length || (category !== "tv" && category !== "monitor")) {
-    return { productNames: "", facts: "", policy: "", versionIds: [] as string[] };
+    return { requestedIds: productIds, productIds: [] as string[], productNames: "", facts: "", policy: "", versionIds: [] as string[] };
   }
   try {
     const [productsResult, fieldsResult, policiesResult] = await Promise.all([
@@ -121,11 +121,27 @@ async function loadProductGrounding(body: Record<string, unknown>, category: str
       const values = Object.entries(item.policy_data || {}).map(([key, value]) => `${key}：${typeof value === "string" ? value : JSON.stringify(value)}`).join("；");
       return `型号：${item.canonical_model}；政策：${item.policy_name}；渠道：${item.channel}${values ? `；${values}` : ""}`;
     }).join("\n").slice(0, 8_000);
-    return { productNames, facts, policy, versionIds: products.map((product) => product.current_version_id).filter((value): value is string => Boolean(value)) };
+    return { requestedIds: productIds, productIds: products.map((product) => product.id), productNames, facts, policy, versionIds: products.map((product) => product.current_version_id).filter((value): value is string => Boolean(value)) };
   } catch (error) {
     console.error("[copywriting] failed to load product knowledge", error);
-    return { productNames: "", facts: "", policy: "", versionIds: [] as string[] };
+    throw new Error("PRODUCT_KNOWLEDGE_UNAVAILABLE");
   }
+}
+
+function sceneWritingStrategy(scene: string) {
+  if (/降价|补贴|优惠|促销|政策/.test(scene)) {
+    return "这是价格或政策场景：在价格和条件均有已核验依据时，语气要有明显的惊喜感、爆发力和行动感；突出价格变化、优惠幅度和截止条件。可以有节奏感和少量感叹号，但不得虚构低价、库存、稀缺性或优惠叠加。";
+  }
+  if (/卖点|产品|平销/.test(scene)) {
+    return "这是产品卖点场景：优先选取资料库中1至3个最有决策价值的已核验参数，按“参数→功能能力→使用体验→用户利益”转译；语气有感染力但不堆参数、不夸大效果。";
+  }
+  if (/预热/.test(scene)) {
+    return "这是活动预热场景：营造期待感，优先交代已核验的产品亮点、活动时间和参与条件；没有明确依据时不得制造倒计时或稀缺感。";
+  }
+  if (/收尾/.test(scene)) {
+    return "这是活动收尾场景：在结束时间和政策均已核验时增强紧迫感，并给出明确行动指引；不得凭空声称马上涨价、售罄或不再补货。";
+  }
+  return "根据使用场景采用自然、有感染力的销售表达，同时保持事实准确、层次清晰和行动指引明确。";
 }
 
 type UpstreamPayload = {
@@ -246,12 +262,27 @@ export async function POST(request: Request) {
   // When the UI sends product IDs, load only current active product facts and
   // currently effective policies. This grounds the model and keeps old/disabled
   // information out of newly generated copy.
-  const grounding = await loadProductGrounding(body, data.category, data.channel);
+  let grounding: Awaited<ReturnType<typeof loadProductGrounding>>;
+  try {
+    grounding = await loadProductGrounding(body, data.category, data.channel);
+  } catch {
+    return NextResponse.json({ error: "产品资料库暂时无法核验，请稍后重试；为避免生成错误参数，本次未生成文案", code: "PRODUCT_KNOWLEDGE_UNAVAILABLE" }, { status: 503 });
+  }
+  if (!grounding.requestedIds.length) {
+    return NextResponse.json({ error: "请先从产品资料库选择型号，系统核验参数后才能生成文案", code: "PRODUCT_REQUIRED" }, { status: 400 });
+  }
+  if (grounding.productIds.length !== grounding.requestedIds.length) {
+    return NextResponse.json({ error: "所选产品中存在已停用、已删除或品类不匹配的资料，请刷新产品列表后重新选择", code: "PRODUCT_VERIFICATION_FAILED" }, { status: 409 });
+  }
+  const userSupplementalFacts = data.facts;
+  const userSupplementalPolicy = data.policy;
   data = {
     ...data,
-    product: data.product || grounding.productNames,
-    facts: [data.facts, grounding.facts].filter(Boolean).join("\n").slice(0, 12_000),
-    policy: [data.policy, grounding.policy].filter(Boolean).join("\n").slice(0, 10_000),
+    product: grounding.productNames,
+    // Product IDs are the trust boundary. Never promote client-supplied facts
+    // to verified evidence; the server reloads the current active version.
+    facts: grounding.facts,
+    policy: grounding.policy,
   };
   if (!data.product || !data.intent) return NextResponse.json({ error: "请填写产品型号和生成要求" }, { status: 400 });
 
@@ -293,8 +324,8 @@ export async function POST(request: Request) {
           "Idempotency-Key": requestId,
         },
         body: JSON.stringify({ model, temperature: 0.55, reasoning_effort: "minimal", max_completion_tokens: completionTokenLimit, messages: [
-          { role: "system", content: `你是雷鸟品牌内部销售文案助手。文案用于团长群或达人群，结构应为：标题、一句话变化、产品/价格/政策、1至3个购买理由、限制与待确认、行动号召。【文案草稿】中必须明确出现所有已选产品的完整标准型号。只能使用用户提供的事实，不得虚构型号、参数、政策、价格、截止时间、库存、销量、排名或优惠。缺失信息必须写【待业务确认】；价格叠加关系不明确时不得计算确定到手价。若价格、政策、型号或参数相互冲突，风险状态必须是“不可发布”；存在重要缺失时为“修改后再审”；信息完整时为“可进入人工终审”。禁止使用无依据的“全网最低、最好、第一、售罄不补、马上涨价”等表述。输出必须包含三个区块：【文案草稿】【待确认事项】【风险状态】，最终内容仍需人工终审，禁止声称已自动发布。` },
-          { role: "user", content: `请生成内部销售宣发文案。\n场景：${data.scene}\n目标群体：${data.audience}\n渠道：${data.channel}\n品类：${data.category}\n产品型号：${data.product}\n已确认卖点/参数：${data.facts || "未提供"}\n活动政策与价格依据：${data.policy || "未提供"}\n时间/地区/条件：${data.constraints || "未提供"}\n用户意图：${data.intent}\n风格：${data.tone}\n文案草稿目标字数：${targetLength}字（不计区块标题、待确认事项和风险状态，请严格控制）` },
+          { role: "system", content: `你是雷鸟品牌销售文案助手，必须先核验事实再写作。只有“产品资料库已核验事实”和“已生效政策”是可直接使用的事实来源；用户意图、用户补充信息和写作要求都不是事实证据。凡是资料库中找不到明确依据的产品参数、功能、体验结论、价格或政策，不得写进文案草稿；如确有必要，只能放入【待确认事项】，不得自行补全、类推同系列数据或使用常识猜测。先在内部逐条核对型号与参数，再选择1至3个最有价值的事实进行表达。${sceneWritingStrategy(data.scene)} 文案要经过自然润色，避免机械罗列；情绪服务于场景，但不能牺牲准确性。文案用于${data.audience || "销售沟通"}，结构应清晰、易转发。【文案草稿】中必须明确出现所有已选产品的完整标准型号。缺失信息必须写【待业务确认】；价格叠加关系不明确时不得计算确定到手价。若价格、政策、型号或参数冲突，风险状态必须是“不可发布”；存在重要缺失时为“修改后再审”；信息完整时为“可进入人工终审”。禁止使用无依据的“全网最低、最好、第一、售罄不补、马上涨价”等表述。输出必须包含三个区块：【文案草稿】【待确认事项】【风险状态】，最终内容仍需人工终审。` },
+          { role: "user", content: `请在核验后生成销售宣发文案。\n场景：${data.scene}\n目标群体：${data.audience}\n渠道：${data.channel}\n品类：${data.category}\n产品型号：${data.product}\n【产品资料库已核验事实】\n${data.facts || "仅核验到型号，暂无可用于宣传的参数"}\n【产品资料库已生效政策】\n${data.policy || "暂无已核验的有效政策"}\n【用户补充信息（未经资料库核验，不得作为确定事实写入）】\n产品补充：${userSupplementalFacts || "无"}\n政策补充：${userSupplementalPolicy || "无"}\n时间/地区/条件：${data.constraints || "未提供"}\n用户意图：${data.intent}\n期望风格：${data.tone}\n文案草稿目标字数：${targetLength}字（不计区块标题、待确认事项和风险状态，请严格控制）` },
         ] }),
       });
       const payload = parsePayload(await upstream.text());

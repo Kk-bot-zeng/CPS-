@@ -450,7 +450,7 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
 }
 
 function GeneratorTab({ category, channel, products, fields, policies, history, onHistory }: { category: ProductCategory; channel: ChannelFilter; products: ProductKnowledge[]; fields: KnowledgeField[]; policies: Policy[]; history: CopyHistory[]; onHistory: (entry: CopyHistory) => void }) {
-  const [form, setForm] = useState({ scene: "产品卖点", audience: "达人群", tone: "professional", length: "50", customLength: "", mode: "merge", intent: "", constraints: "", policy: "" });
+  const [form, setForm] = useState({ scene: "产品卖点", audience: "达人群", tone: "adaptive", length: "50", customLength: "", mode: "merge", intent: "", constraints: "", policy: "" });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -472,7 +472,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   async function generateOne(product: ProductKnowledge | null, productIds: string[] = product ? [product.id] : [], productLabel?: string) {
     const productName = productLabel || product?.model || "未选择型号";
     const facts = product ? formatFacts(product, fields) : "未从产品资料库选择型号";
-    const response = await fetch("/api/copywriting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene: form.scene, audience: form.audience, tone: ({ professional: "专业正式", lively: "活泼生动", concise: "简洁有力", emotional: "情感共鸣" } as Record<string, string>)[form.tone] || form.tone, length: `${length}字`, product: productName, productIds, facts, policy: form.policy || selectedPolicyText, constraints: form.constraints, intent: form.intent, channel: channel === "all" ? "all" : channel, category, }) });
+    const response = await fetch("/api/copywriting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene: form.scene, audience: form.audience, tone: ({ adaptive: "根据场景自动调整", professional: "专业正式", lively: "活泼生动", concise: "简洁有力", emotional: "情感共鸣" } as Record<string, string>)[form.tone] || form.tone, length: `${length}字`, product: productName, productIds, facts, policy: form.policy || selectedPolicyText, constraints: form.constraints, intent: form.intent, channel: channel === "all" ? "all" : channel, category, }) });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "文案生成失败");
     return safeText(payload.content);
@@ -502,9 +502,9 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
           <div><span>当前品类</span><b>{categoryLabel}</b></div><div><span>目标渠道</span><b>{channelLabel}</b></div><div><span>资料状态</span><b className="cw-status-good"><CheckCircle2 size={13} /> 已加载 {products.length} 个型号</b></div>
         </div>
         <div className="generator-config-grid">
-          <label className="cw-field"><span>使用场景</span><select value={form.scene} onChange={(event) => setForm({ ...form, scene: event.target.value })}><option>产品卖点</option><option>产品政策</option><option>活动预热</option><option>平销推广</option><option>活动收尾</option></select></label>
+          <label className="cw-field"><span>使用场景</span><select value={form.scene} onChange={(event) => setForm({ ...form, scene: event.target.value })}><option>产品卖点</option><option>降价促销</option><option>产品政策</option><option>活动预热</option><option>平销推广</option><option>活动收尾</option></select></label>
           <label className="cw-field"><span>目标群体</span><select value={form.audience} onChange={(event) => setForm({ ...form, audience: event.target.value })}><option>团长群</option><option>达人群</option><option>消费者宣传</option></select></label>
-          <label className="cw-field"><span>表达风格</span><select value={form.tone} onChange={(event) => setForm({ ...form, tone: event.target.value })}><option value="professional">专业正式</option><option value="lively">活泼生动</option><option value="concise">简洁有力</option><option value="emotional">情感共鸣</option></select></label>
+          <label className="cw-field"><span>表达风格</span><select value={form.tone} onChange={(event) => setForm({ ...form, tone: event.target.value })}><option value="adaptive">场景自适应</option><option value="professional">专业正式</option><option value="lively">活泼生动</option><option value="concise">简洁有力</option><option value="emotional">情感共鸣</option></select></label>
           <label className="cw-field"><span>文案长度</span><select value={form.length} onChange={(event) => setForm({ ...form, length: event.target.value })}><option value="50">50字（群发短文案）</option><option value="100">100字（精简版）</option><option value="200">200字（标准版）</option><option value="custom">自定义字数</option></select></label>
           {form.length === "custom" && <label className="cw-field"><span>自定义字数</span><input value={form.customLength} onChange={(event) => setForm({ ...form, customLength: event.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="例如 160" inputMode="numeric" /></label>}
           {selectedIds.length > 1 && <label className="cw-field"><span>多型号生成方式</span><select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}><option value="merge">合并生成一条</option><option value="separate">每个型号分别生成</option></select></label>}

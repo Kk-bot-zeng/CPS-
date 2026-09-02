@@ -609,6 +609,22 @@ async function main() {
     assert.ok(!list.body.products.some((item) => item.canonical_model === unknownModel));
   });
 
+  await expect("文案生成必须先通过产品资料库型号核验", async () => {
+    const missingProduct = await request("/api/copywriting", {
+      method: "POST",
+      body: { category: "tv", channel: "jd", scene: "产品卖点", intent: "突出产品功能", productIds: [] },
+    });
+    expectStatus(missingProduct, 400);
+    assert.equal(missingProduct.body?.code, "PRODUCT_REQUIRED");
+
+    const invalidProduct = await request("/api/copywriting", {
+      method: "POST",
+      body: { category: "tv", channel: "jd", scene: "产品卖点", intent: "突出产品功能", productIds: ["00000000-0000-4000-8000-000000000000"] },
+    });
+    expectStatus(invalidProduct, 409);
+    assert.equal(invalidProduct.body?.code, "PRODUCT_VERIFICATION_FAILED");
+  });
+
   if (runAi) {
     await expect("50字文案请求返回短文案且不携带过期政策", async () => {
       const result = await request("/api/copywriting", {
