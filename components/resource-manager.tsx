@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Download,
   Edit3,
@@ -41,6 +41,56 @@ const blank = (channel: ChannelFilter, category: "tv" | "monitor"): Partial<Reco
   product_category: category,
 });
 const PAGE_SIZE = 25;
+
+async function fetchJson<T>(url: string, init?: RequestInit, fallback = "请求失败"): Promise<T> {
+  const response = await fetch(url, init);
+  const payload = await response.json().catch(() => null) as any;
+  if (!response.ok) throw new Error(String(payload?.error || payload?.message || fallback));
+  return payload as T;
+}
+
+function useModalBehavior(close: () => void) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const closeHandler = useRef(close);
+  closeHandler.current = close;
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const focusModal = () => closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeHandler.current();
+        return;
+      }
+      if (event.key !== "Tab" || !modalRef.current) return;
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const frame = window.requestAnimationFrame(focusModal);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      window.cancelAnimationFrame(frame);
+      previous?.focus?.();
+    };
+  }, []);
+
+  return { modalRef, closeRef };
+}
+
 export default function ResourceManager({
   channel,
   category,
@@ -56,15 +106,27 @@ export default function ResourceManager({
     [page, setPage] = useState(1),
     [editing, setEditing] = useState<Partial<RecordRow> | null>(null),
     [batch, setBatch] = useState<any[] | null>(null),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [loading, setLoading] = useState(false),
+    [saving, setSaving] = useState(false),
+    [importing, setImporting] = useState(false),
+    [deletingId, setDeletingId] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   async function load() {
-    const [t, l] = await Promise.all([
-      fetch(`/api/talents?channel=${channel}&category=${category}`).then((r) => r.json()),
-      fetch(`/api/leaders?channel=${channel}&category=${category}`).then((r) => r.json()),
-    ]);
-    setTalents(t.map((x: any) => ({ ...x, kind: "达人" })));
-    setLeaders(l.map((x: any) => ({ ...x, kind: "团长" })));
+    setLoading(true);
+    try {
+      const [t, l] = await Promise.all([
+        fetchJson<any[]>(`/api/talents?channel=${channel}&category=${category}`, undefined, "读取达人档案失败"),
+        fetchJson<any[]>(`/api/leaders?channel=${channel}&category=${category}`, undefined, "读取团长档案失败"),
+      ]);
+      if (!Array.isArray(t) || !Array.isArray(l)) throw new Error("档案接口返回格式不正确");
+      setTalents(t.map((x: any) => ({ ...x, kind: "达人" })));
+      setLeaders(l.map((x: any) => ({ ...x, kind: "团长" })));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "档案读取失败，请稍后重试");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => {
     void load();
@@ -93,32 +155,43 @@ export default function ResourceManager({
     [rows, page],
   );
   async function save() {
+    if (saving || importing || deletingId) return;
     if (!editing?.name || !editing.platform) {
       setMessage("请填写名称并选择渠道");
       return;
     }
+    setSaving(true);
+    setMessage("");
     const base = editing.kind === "达人" ? "talents" : "leaders",
       url = editing.id ? `/api/${base}/${editing.id}` : `/api/${base}`;
-    const r = await fetch(url, {
-      method: editing.id ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...editing, product_category: category, platform: category === "monitor" ? "jd" : editing.platform }),
-    });
-    const j = await r.json();
-    if (!r.ok) {
-      setMessage(j.error || "保存失败");
-      return;
+    try {
+      await fetchJson(url, {
+        method: editing.id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...editing, product_category: category, platform: category === "monitor" ? "jd" : editing.platform }),
+      }, "保存失败");
+      setEditing(null);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存失败，数据库未发生变更");
+    } finally {
+      setSaving(false);
     }
-    setEditing(null);
-    setMessage("");
-    await load();
   }
   async function remove(r: RecordRow) {
+    if (deletingId || saving || importing) return;
     if (!confirm(`确定删除${r.kind}“${r.name}”吗？`)) return;
-    await fetch(`/api/${r.kind === "达人" ? "talents" : "leaders"}/${r.id}`, {
-      method: "DELETE",
-    });
-    await load();
+    setDeletingId(r.id);
+    setMessage("");
+    try {
+      await fetchJson(`/api/${r.kind === "达人" ? "talents" : "leaders"}/${r.id}`, { method: "DELETE" }, "删除失败");
+      setMessage(`已删除${r.kind}“${r.name}”`);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "删除失败，数据库未发生变更");
+    } finally {
+      setDeletingId(null);
+    }
   }
   function template() {
     const data = [
@@ -172,44 +245,59 @@ export default function ResourceManager({
     XLSX.writeFile(wb, category === "monitor" ? "显示器_京东达人团长批量导入模板.xlsx" : "TV_达人团长批量导入模板.xlsx");
   }
   async function readFile(file: File) {
-    const raw = await parseSpreadsheet(file);
-    setBatch(
-      raw.map((r) => ({
-        type: r["身份(达人/团长)"],
-        name: String(r["名称"]),
-        channel: category === "monitor" ? "jd" :
-          ({ 京东: "jd", 抖音: "douyin", 天猫: "tmall" } as any)[
-            String(r["渠道(京东/抖音/天猫)"] || "")
-          ] || r["渠道(京东/抖音/天猫)"],
-        account: String(r["平台账号"]),
-        matchId: String(r["匹配ID/联盟ID"] || ""),
-        leader: String(r["所属团长"]),
-        contact: String(r["联系人"]),
-        phone: String(r["手机号"]),
-        wechat: String(r["微信"]),
-        province: String(r["省"]),
-        city: String(r["市"]),
-        district: String(r["区/县"]),
-        address: String(r["详细地址"]),
-        status: String(r["合作状态"]),
-        notes: String(r["备注"]),
-      })),
-    );
+    if (importing || saving || deletingId) return;
+    setImporting(true);
+    setMessage("");
+    try {
+      const raw = await parseSpreadsheet(file);
+      if (!raw.length) throw new Error("文件没有可导入的数据行");
+      setBatch(
+        raw.map((r) => ({
+          type: r["身份(达人/团长)"],
+          name: String(r["名称"] || ""),
+          channel: category === "monitor" ? "jd" :
+            ({ 京东: "jd", 抖音: "douyin", 天猫: "tmall" } as any)[
+              String(r["渠道(京东/抖音/天猫)"] || "")
+            ] || r["渠道(京东/抖音/天猫)"],
+          account: String(r["平台账号"] || ""),
+          matchId: String(r["匹配ID/联盟ID"] || ""),
+          leader: String(r["所属团长"] || ""),
+          contact: String(r["联系人"] || ""),
+          phone: String(r["手机号"] || ""),
+          wechat: String(r["微信"] || ""),
+          province: String(r["省"] || ""),
+          city: String(r["市"] || ""),
+          district: String(r["区/县"] || ""),
+          address: String(r["详细地址"] || ""),
+          status: String(r["合作状态"] || ""),
+          notes: String(r["备注"] || ""),
+        })),
+      );
+    } catch (error) {
+      setBatch(null);
+      setMessage(error instanceof Error ? error.message : "文件解析失败，请检查模板格式");
+    } finally {
+      setImporting(false);
+    }
   }
   async function importBatch() {
-    const r = await fetch("/api/resources/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rows: batch, product_category: category }),
-    });
-    const j = await r.json();
-    if (!r.ok) {
-      setMessage([j.error, ...(j.errors || [])].join("；"));
-      return;
+    if (!batch?.length || importing || saving || deletingId) return;
+    setImporting(true);
+    setMessage("");
+    try {
+      const j = await fetchJson<any>("/api/resources/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: batch, product_category: category }),
+      }, "批量导入失败");
+      setMessage(`成功导入${j.total}条：${j.leaders}位团长、${j.talents}位达人`);
+      setBatch(null);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "批量导入失败，数据库未发生变更");
+    } finally {
+      setImporting(false);
     }
-    setMessage(`成功导入${j.total}条：${j.leaders}位团长、${j.talents}位达人`);
-    setBatch(null);
-    await load();
   }
   return (
     <>
@@ -226,13 +314,14 @@ export default function ResourceManager({
             <Download size={15} />
             下载模板
           </button>
-          <button onClick={() => input.current?.click()}>
+          <button disabled={importing || saving || Boolean(deletingId)} onClick={() => input.current?.click()}>
             <UploadCloud size={15} />
             批量导入
           </button>
           <button
             className="primary"
-            onClick={() => setEditing(blank(category === "monitor" ? "jd" : channel, category))}
+            disabled={importing || saving || Boolean(deletingId)}
+            onClick={() => { setMessage(""); setEditing(blank(category === "monitor" ? "jd" : channel, category)); }}
           >
             <Plus size={15} />
             新增资源
@@ -244,7 +333,11 @@ export default function ResourceManager({
         hidden
         type="file"
         accept=".xlsx,.xls,.csv"
-        onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void readFile(file);
+        }}
       />
       <div className="filters real-filter">
         <div className="filter-search">
@@ -268,7 +361,7 @@ export default function ResourceManager({
         </div>
         <span />
       </div>
-      {message && <div className="notice">{message}</div>}
+      {message && <div className="notice" role="status">{message}</div>}
       <div className="panel table-panel">
         <div className="data-table">
           <table>
@@ -312,10 +405,10 @@ export default function ResourceManager({
                   <td>{r.cooperation_status}</td>
                   <td>
                     <div className="row-actions">
-                      <button onClick={() => setEditing(r)}>
+          <button disabled={deletingId === r.id || importing || saving} onClick={() => { setMessage(""); setEditing(r); }}>
                         <Edit3 size={14} />
                       </button>
-                      <button className="danger" onClick={() => remove(r)}>
+          <button className="danger" disabled={deletingId === r.id || importing || saving} onClick={() => remove(r)}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -342,6 +435,8 @@ export default function ResourceManager({
           setValue={setEditing}
           category={category}
           close={() => setEditing(null)}
+          busy={saving}
+          error={message}
           save={save}
         />
       )}{" "}
@@ -350,6 +445,8 @@ export default function ResourceManager({
           rows={batch}
           close={() => setBatch(null)}
           submit={importBatch}
+          busy={importing}
+          error={message}
         />
       )}
     </>
@@ -362,21 +459,32 @@ function ResourceModal({
   close,
   save,
   category,
+  busy,
+  error,
 }: {
   value: Partial<RecordRow>;
   leaders: RecordRow[];
   setValue: (v: Partial<RecordRow>) => void;
   close: () => void;
-  save: () => void;
+  save: () => Promise<void>;
   category: "tv" | "monitor";
+  busy: boolean;
+  error: string;
 }) {
+  const titleId = useId();
+  const { modalRef, closeRef } = useModalBehavior(close);
   const set = (k: string, v: string) => setValue({ ...value, [k]: v });
   return (
-    <div className="modal-backdrop">
-      <div className="form-modal">
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
+      <div ref={modalRef} className="form-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-head">
-          <h3>{value.id ? "编辑" : "新增"}达人/团长</h3>
-          <button onClick={close}>
+          <h3 id={titleId}>{value.id ? "编辑" : "新增"}达人/团长</h3>
+          <button ref={closeRef} type="button" onClick={close} aria-label="关闭弹窗">
             <X />
           </button>
         </div>
@@ -462,10 +570,11 @@ function ResourceModal({
             </Field>
           ))}
         </div>
+        {error && <div className="notice" role="alert">{error}</div>}
         <div className="modal-actions">
-          <button onClick={close}>取消</button>
-          <button className="primary" onClick={save}>
-            保存
+          <button type="button" onClick={close}>取消</button>
+          <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
+            {busy ? "保存中…" : "保存"}
           </button>
         </div>
       </div>
@@ -490,17 +599,28 @@ function BatchModal({
   rows,
   close,
   submit,
+  busy,
+  error,
 }: {
   rows: any[];
   close: () => void;
-  submit: () => void;
+  submit: () => Promise<void>;
+  busy: boolean;
+  error: string;
 }) {
+  const titleId = useId();
+  const { modalRef, closeRef } = useModalBehavior(close);
   return (
-    <div className="modal-backdrop">
-      <div className="form-modal batch-modal">
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
+      <div ref={modalRef} className="form-modal batch-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-head">
-          <h3>批量导入预览（{rows.length}条）</h3>
-          <button onClick={close}>
+          <h3 id={titleId}>批量导入预览（{rows.length}条）</h3>
+          <button ref={closeRef} type="button" onClick={close} aria-label="关闭弹窗">
             <X />
           </button>
         </div>
@@ -532,10 +652,11 @@ function BatchModal({
             </tbody>
           </table>
         </div>
+        {error && <div className="notice" role="alert">{error}</div>}
         <div className="modal-actions">
-          <button onClick={close}>取消</button>
-          <button className="primary" onClick={submit}>
-            确认导入
+          <button type="button" onClick={close}>取消</button>
+          <button type="button" className="primary" onClick={() => void submit()} disabled={busy}>
+            {busy ? "导入中…" : "确认导入"}
           </button>
         </div>
       </div>

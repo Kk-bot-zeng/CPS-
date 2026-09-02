@@ -46,7 +46,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .filter-banner{background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:var(--radius);padding:12px 20px;display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
 .filter-banner .filter-label{font-size:12px;color:#1e40af;font-weight:700;white-space:nowrap}
 .filter-badge-group{display:flex;gap:4px;flex-wrap:wrap}
-.filter-badge{padding:4px 12px;border-radius:4px;border:1px solid #93c5fd;background:#fff;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text)}
+.filter-badge{padding:4px 12px;border-radius:4px;border:1px solid #93c5fd;background:#fff;font:inherit;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text)}
 .filter-badge:hover{border-color:var(--blue);color:var(--blue)}
 .filter-badge.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .filter-custom-date{display:none;align-items:center;gap:6px}
@@ -57,7 +57,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 
 /* ─── KPI Cards ─── */
 .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line)}
-.kpi-card{background:var(--surface);padding:16px 18px;text-align:center;cursor:pointer;transition:background .15s}
+.kpi-card{background:var(--surface);padding:16px 18px;text-align:center;cursor:pointer;transition:background .15s;border:0;width:100%;font:inherit;color:inherit}
 .kpi-card:hover{background:#f0f7ff}
 .kpi-card .kpi-label{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600}
 .kpi-card .kpi-value{font-size:28px;font-weight:800;color:var(--text);margin-bottom:4px}
@@ -93,7 +93,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .rank-table tbody tr:hover,.creator-detail-table tbody tr:hover,.data-table tbody tr:hover{background:#f0f7ff}
 .rank-num{display:inline-flex;width:22px;height:22px;line-height:22px;text-align:center;border-radius:4px;font-size:11px;font-weight:700;color:#fff;background:var(--muted)}
 .rank-num.r1{background:#f59d22}.rank-num.r2{background:#94a3b8}.rank-num.r3{background:#cd7f32}
-.clickable-link{color:var(--blue);text-decoration:none;cursor:pointer;font-weight:500}
+.clickable-link{color:var(--blue);text-decoration:none;cursor:pointer;font-weight:500;border:0;background:none;padding:0;font:inherit;text-align:left}
 .clickable-link:hover{text-decoration:underline}
 
 /* Brand highlight */
@@ -114,7 +114,8 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .correlation-track{height:7px;background:#eef2f7;border-radius:8px;overflow:hidden}.correlation-bar{height:100%;border-radius:8px;background:#2468d8}.correlation-bar.negative{background:#f59d22}
 .analysis-note{padding:0 20px 16px;color:var(--muted);font-size:11px}@media(max-width:900px){.auto-analysis-grid{grid-template-columns:1fr}}
 .ai-insight .ai-text{color:#374151;white-space:pre-wrap}
-.ai-refresh{font-size:10px;color:var(--blue);cursor:pointer;margin-left:auto;float:right}
+.ai-refresh{font-size:10px;color:var(--blue);cursor:pointer;margin-left:auto;float:right;border:0;background:none;padding:3px 6px;font:inherit}
+.ai-refresh:disabled,.ai-generate-btn:disabled{opacity:.55;cursor:not-allowed}
 .ai-loading{color:var(--muted);font-style:italic}
 .ai-generate-btn{padding:5px 14px;border:1px solid var(--green);background:#fff;color:var(--green);border-radius:4px;cursor:pointer;font-size:11px;white-space:normal;float:none}
 .ai-generate-btn:hover{background:var(--green);color:#fff}
@@ -132,7 +133,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 
 /* ─── Creator Workbench ─── */
 .workbench-tabs{display:flex;gap:0;border-bottom:2px solid var(--line);margin:0}
-.workbench-tab{padding:10px 20px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);transition:all .15s}
+.workbench-tab{padding:10px 20px;font:inherit;font-size:13px;cursor:pointer;border:0;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);background:transparent;transition:all .15s}
 .workbench-tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
 .workbench-tab:hover:not(.active){color:var(--text)}
 .workbench-panel{display:none;padding:16px 20px}
@@ -169,6 +170,14 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .loading-box .spinner-big{width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
 .loading-box p{color:var(--muted);font-size:13px}
 
+/* Action feedback: transient, accessible confirmation for async operations. */
+.dashboard-toast{position:fixed;right:24px;bottom:24px;z-index:1001;max-width:min(420px,calc(100vw - 32px));padding:10px 14px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;color:#1e40af;box-shadow:0 8px 24px rgba(30,64,175,.16);opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease;font-size:12px}
+.dashboard-toast.show{opacity:1;transform:translateY(0)}
+.dashboard-toast.success{border-color:#a7f3d0;background:#ecfdf5;color:#065f46}
+.dashboard-toast.error{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+.dashboard-toast.info{border-color:#bfdbfe;background:#eff6ff;color:#1e40af}
+.dashboard-toast:focus{outline:2px solid #93c5fd;outline-offset:2px}
+
 /* ROI placeholder */
 .roi-placeholder{padding:20px;text-align:center;color:var(--muted);font-size:12px;border:2px dashed var(--line);border-radius:var(--radius);margin-top:10px}
 
@@ -188,6 +197,7 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
     <p id="loadingText">正在加载数据...</p>
   </div>
 </div>
+<div class="dashboard-toast" id="dashboardToast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <header class="header">
   <span class="brand">CPS达人全链路操盘2.0</span>
@@ -214,6 +224,8 @@ const state = {
   drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
   activeModule: 'platform', activeWB:'tabInvite', latestAvailableDate:'', activeMetrics:['content_count'], invitePage:1, churnPage:1, productPage:1,
   moduleCache:{}, moduleLoading:'', roiRows:[], roiTrackingDays:30, roiLoading:false,
+  refreshing:false, dashboardLoading:false, aiGenerating:false, inviteSending:false, roiImporting:false,
+  customDateOpen:false, customDateDraftStart:'', customDateDraftEnd:'',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -223,6 +235,29 @@ const API = '/monitor-api';
 
 async function showLoading(text='加载中...'){ $('#loadingText').textContent=text; $('#loadingOverlay').classList.add('show'); }
 async function hideLoading(){ $('#loadingOverlay').classList.remove('show'); }
+
+let feedbackTimer=0;
+function showFeedback(message,type='info'){
+  const el=$('#dashboardToast');
+  if(!el)return;
+  clearTimeout(feedbackTimer);
+  el.textContent=message;
+  el.className=`dashboard-toast show ${type}`;
+  el.setAttribute('role',type==='error'?'alert':'status');
+  feedbackTimer=setTimeout(()=>{el.classList.remove('show');},type==='error'?5200:3200);
+}
+function setControlBusy(selector,busy){
+  const el=$(selector);
+  if(!el)return;
+  el.disabled=!!busy;
+  el.setAttribute('aria-busy',busy?'true':'false');
+}
+function updateAIControls(busy){
+  $$('.ai-generate-btn,.ai-refresh').forEach(el=>{
+    el.disabled=!!busy;
+    el.setAttribute('aria-busy',busy?'true':'false');
+  });
+}
 
 async function apiGet(url,options={}){ const r=await fetch(API+url,options); if(!r.ok)throw new Error('HTTP '+r.status); return r.json(); }
 async function apiPost(url,body){ const r=await fetch(API+url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok)throw new Error('HTTP '+r.status); return r.json(); }
@@ -258,7 +293,7 @@ function renderApp(){
 
 function renderModuleNav(){
   const tabs=[['platform','平台总览'],['industry','行业分析'],['creator','达人工作台']];
-  return `<nav class="module-nav" aria-label="B站操盘模块">${tabs.map(([key,label])=>`<button class="module-tab ${state.activeModule===key?'active':''}" onclick="switchDashboardModule('${key}')">${label}</button>`).join('')}</nav>`;
+  return `<nav class="module-nav" aria-label="B站操盘模块">${tabs.map(([key,label])=>`<button type="button" class="module-tab ${state.activeModule===key?'active':''}" aria-current="${state.activeModule===key?'page':'false'}" onclick="switchDashboardModule('${key}')">${label}</button>`).join('')}</nav>`;
 }
 
 function renderAutoAnalysis(){
@@ -340,22 +375,25 @@ async function switchDashboardModule(module){
 // ─── A. Date Filter Banner ───────────────────────────────────────────────────
 function renderFilterBanner(){
   const currentPeriod = state.selectedPeriod;
+  const customOpen=state.customDateOpen;
+  const draftStart=state.customDateDraftStart||(currentPeriod==='custom'?state.periodStart:'');
+  const draftEnd=state.customDateDraftEnd||(currentPeriod==='custom'?state.periodEnd:'');
   return `
   <div class="filter-banner" id="filterBanner">
     <span class="filter-label">&#128197; 全局日期筛选</span>
     <div class="filter-badge-group">
-      <span class="filter-badge ${currentPeriod==='today'?'active':''}" onclick="setPeriod('today')">今天</span>
-      <span class="filter-badge ${currentPeriod==='yesterday'?'active':''}" onclick="setPeriod('yesterday')">昨天</span>
-      <span class="filter-badge ${currentPeriod==='7'?'active':''}" onclick="setPeriod('7')">近7天</span>
-      <span class="filter-badge ${currentPeriod==='14'?'active':''}" onclick="setPeriod('14')">近14天</span>
-      <span class="filter-badge ${currentPeriod==='30'?'active':''}" onclick="setPeriod('30')">近30天</span>
-      <span class="filter-badge ${currentPeriod==='custom'?'active':''}" onclick="toggleCustomDate()">自定义范围</span>
+      <button type="button" class="filter-badge ${currentPeriod==='today'?'active':''}" aria-pressed="${currentPeriod==='today'}" onclick="setPeriod('today')">今天</button>
+      <button type="button" class="filter-badge ${currentPeriod==='yesterday'?'active':''}" aria-pressed="${currentPeriod==='yesterday'}" onclick="setPeriod('yesterday')">昨天</button>
+      <button type="button" class="filter-badge ${currentPeriod==='7'?'active':''}" aria-pressed="${currentPeriod==='7'}" onclick="setPeriod('7')">近7天</button>
+      <button type="button" class="filter-badge ${currentPeriod==='14'?'active':''}" aria-pressed="${currentPeriod==='14'}" onclick="setPeriod('14')">近14天</button>
+      <button type="button" class="filter-badge ${currentPeriod==='30'?'active':''}" aria-pressed="${currentPeriod==='30'}" onclick="setPeriod('30')">近30天</button>
+      <button type="button" class="filter-badge ${currentPeriod==='custom'?'active':''}" aria-pressed="${customOpen}" aria-expanded="${customOpen}" aria-controls="customDateGroup" onclick="toggleCustomDate()">自定义范围</button>
     </div>
-    <div class="filter-custom-date ${currentPeriod==='custom'?'show':''}" id="customDateGroup">
-      <input type="date" id="startDateInput">
+    <div class="filter-custom-date ${customOpen?'show':''}" id="customDateGroup">
+      <input type="date" id="startDateInput" aria-label="开始日期" value="${draftStart}" oninput="setCustomDateDraft('start',this.value)">
       <span>至</span>
-      <input type="date" id="endDateInput">
-      <button onclick="applyCustomDate()">确认</button>
+      <input type="date" id="endDateInput" aria-label="结束日期" value="${draftEnd}" oninput="setCustomDateDraft('end',this.value)">
+      <button type="button" onclick="applyCustomDate()">确认</button>
     </div>
     <span class="date-range-info" id="dateRangeInfo">${getDateRangeText()}</span>
   </div>`;
@@ -369,31 +407,56 @@ function getDateRangeText(){
 }
 
 function toggleCustomDate(){
-  const g=$('#customDateGroup');
-  if(g)g.classList.toggle('show');
+  state.customDateOpen=!state.customDateOpen;
+  renderApp();
+  if(state.customDateOpen)setTimeout(()=>$('#startDateInput')?.focus(),0);
+}
+
+function setCustomDateDraft(which,value){
+  if(which==='start')state.customDateDraftStart=value;
+  if(which==='end')state.customDateDraftEnd=value;
+}
+
+function closeCustomDatePicker(){
+  if(!state.customDateOpen)return;
+  state.customDateOpen=false;
+  renderApp();
 }
 
 async function setPeriod(p){
+  if(state.refreshing||state.roiLoading||state.roiImporting)return;
+  const previous={selectedPeriod:state.selectedPeriod,periodStart:state.periodStart,periodEnd:state.periodEnd};
   state.selectedPeriod=p;
+  state.customDateOpen=false;
   state.drillFilter=null;
-  await loadDailyData(p);
+  const loaded=await loadDailyData(p);
+  if(loaded===false)Object.assign(state,previous);
   renderApp();
   updateFooter();
 }
 
 async function applyCustomDate(){
+  if(state.refreshing||state.roiLoading||state.roiImporting)return;
   const s=$('#startDateInput'),e=$('#endDateInput');
-  if(s&&e&&s.value&&e.value){
-    state.selectedPeriod='custom';
-    state.periodStart=s.value;
-    state.periodEnd=e.value;
-    state.drillFilter=null;
-    // Compute the real inclusive day difference; do not silently rewrite it to 7 days.
-    const d1=new Date(s.value), d2=new Date(e.value);
-    const dayDiff=Math.ceil((d2-d1)/86400000)+1;
-    if(dayDiff<1){alert('结束日期不能早于开始日期');return;}
-    await loadDashboard(dayDiff,s.value,e.value);
-  }
+  const start=s?.value||state.customDateDraftStart,end=e?.value||state.customDateDraftEnd;
+  const validDate=value=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return null;
+    const [year,month,day]=value.split('-').map(Number),date=new Date(Date.UTC(year,month-1,day));
+    return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:null;
+  };
+  const d1=validDate(start),d2=validDate(end);
+  if(!d1||!d2){showFeedback('请选择有效的开始日期和结束日期。','error');return;}
+  if(d2<d1){showFeedback('结束日期不能早于开始日期。','error');return;}
+  const previous={selectedPeriod:state.selectedPeriod,periodStart:state.periodStart,periodEnd:state.periodEnd};
+  const dayDiff=Math.floor((d2-d1)/86400000)+1;
+  const loaded=await loadDashboard(dayDiff,start,end);
+  if(loaded===false){Object.assign(state,previous);state.customDateOpen=true;renderApp();return;}
+  state.selectedPeriod='custom';
+  state.periodStart=start;state.periodEnd=end;
+  state.customDateDraftStart=start;state.customDateDraftEnd=end;
+  state.customDateOpen=false;state.drillFilter=null;
+  renderApp();
+  showFeedback(`已应用 ${start} 至 ${end} 的数据。`,'success');
 }
 
 // ─── B. Today Overview ────────────────────────────────────────────────────────
@@ -475,7 +538,7 @@ function renderKPISection(){
         const drillable=card.data_status==='ready'||(card.data_status==null&&card.current_value!=null);
         const ready=drillable;
         return `
-      <div class="kpi-card" data-key="${card.key||''}" ${drillable?`onclick="drillToContent('scope','${card.detail_scope||'all'}')"`:''} title="${drillable?'点击查看相关内容明细':card.data_message||'数据待补充'}">
+      <button type="button" class="kpi-card" data-key="${card.key||''}" ${drillable?`onclick="drillToContent('scope','${card.detail_scope||'all'}')"`:''} ${drillable?'':'disabled'} style="cursor:${drillable?'pointer':'default'}" title="${drillable?'点击查看相关内容明细':card.data_message||'数据待补充'}">
         <div class="kpi-label">${card.label}</div>
         <div class="kpi-value">${ready?fmt(card.current_value):'待补充'} <span class="kpi-unit">${ready?(card.unit||''):''}</span></div>
         <div class="kpi-sub">${card.metric_note||subMap[card.key]||card.sub_label||''}<br>
@@ -497,7 +560,7 @@ const CORE_METRICS={
   jd_amount:{label:'京东联盟佣金',unit:'元',value:d=>Number(d.commission_amount||0)}
 };
 function renderCoreMetricChart(){
-  const buttons=Object.entries(CORE_METRICS).map(([key,m])=>`<button class="${state.activeMetrics.includes(key)?'active':''}" onclick="selectCoreMetric('${key}')">${m.label}</button>`).join('');
+  const buttons=Object.entries(CORE_METRICS).map(([key,m])=>`<button type="button" class="${state.activeMetrics.includes(key)?'active':''}" aria-pressed="${state.activeMetrics.includes(key)}" onclick="selectCoreMetric('${key}')">${m.label}</button>`).join('');
   return `<div class="chart-wrap"><div class="chart-toolbar"><div class="chart-toolbar-copy"><b>核心指标趋势</b><span>可同时选择多个指标 · 实线为本期，虚线为上期</span></div><div class="metric-switch">${buttons}</div></div><div class="chart-container" id="curveChart"></div></div>`;
 }
 function selectCoreMetric(key){const exists=state.activeMetrics.includes(key);if(exists&&state.activeMetrics.length===1)return;state.activeMetrics=exists?state.activeMetrics.filter(x=>x!==key):[...state.activeMetrics,key];renderApp();}
@@ -549,7 +612,7 @@ async function loadDrilldownData(key,val){
       // Collect clickable links during map iteration
     let brandLinkHtml='';
     const rows=data.slice(0,100).map((d,i)=>{
-      const creatorLink=d.creator_name?`<a class="clickable-link" onclick="event.stopPropagation();drillToContent('creator_name','${encodeURIComponent(d.creator_name)}')">${d.creator_name}</a>`:('-');
+      const creatorLink=d.creator_name?`<button type="button" class="clickable-link" onclick="event.stopPropagation();drillToContent('creator_name','${encodeURIComponent(d.creator_name)}')">${d.creator_name}</button>`:('-');
       const detailLink=d.url?`<a class="clickable-link" href="${d.url}" target="_blank" rel="noopener">${d.title||'查看原视频'} &#8599;</a>`:(d.title||'-');
       if(detailLink)brandLinkHtml=detailLink;
       return `<tr>
@@ -588,7 +651,7 @@ function renderContentAnalysis(mode='industry'){
         <tbody>${brands.map((b,i)=>`
           <tr class="${b.brand_name==='HKC'||b.brand_name==='雷鸟'?'brand-row-hkc':''}">
             <td><span class="rank-num ${i<3?'r'+(i+1):''}">${i+1}</span></td>
-            <td><a class="clickable-link" data-brand="${encodeURIComponent(b.brand_name)}" onclick="drillToContent('brand',this.dataset.brand)">${b.brand_name}${b.brand_name==='HKC'||b.brand_name==='雷鸟'?' &#9733;':''}</a></td>
+            <td><button type="button" class="clickable-link" data-brand="${encodeURIComponent(b.brand_name)}" onclick="drillToContent('brand',this.dataset.brand)">${b.brand_name}${b.brand_name==='HKC'||b.brand_name==='雷鸟'?' &#9733;':''}</button></td>
             <td class="num">${fmt(b.content_count)}</td>
             <td class="num">${fmt(b.play_count)}</td>
             <td class="num">${fmt(b.link_count)}</td>
@@ -606,7 +669,7 @@ function renderContentAnalysis(mode='industry'){
         <tbody>${creators.map((c,i)=>`
           <tr>
             <td>${i+1}</td>
-            <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</a>${hasDecline(c)?'<span class="warning-icon" title="趋势下降">&#9888;</span>':''}</td>
+            <td><button type="button" class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</button>${hasDecline(c)?'<span class="warning-icon" title="趋势下降">&#9888;</span>':''}</td>
             <td class="num">${fmt(c.content_count)}</td>
             <td class="num">${fmt(c.play_count)}</td>
             <td class="num">${fmt(c.interaction_count)}</td>
@@ -630,7 +693,7 @@ function renderContentAnalysis(mode='industry'){
           <tbody>${pageRows.map((c,i)=>`
             <tr>
               <td>${(state.productPage-1)*pageSize+i+1}</td>
-              <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</a></td>
+              <td><button type="button" class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(c.creator_name)}')">${c.creator_name}</button></td>
               <td class="num metric-pair"><b>${fmt(c.content_count)}</b>${pctText(c.content_count_change_pct)}</td>
               <td class="num metric-pair"><b>${fmt(c.play_count)}</b>${pctText(c.play_count_change_pct)}</td>
               <td class="num metric-pair"><b>${fmt(c.interaction_count)}</b>${pctText(c.interaction_count_change_pct)}</td>
@@ -684,8 +747,8 @@ function renderContentAnalysis(mode='industry'){
     <div class="ai-insight">
       <div class="ai-label">
         &#128161; AI一句话分析${aiFresh}
-        <button class="ai-generate-btn" onclick="generateAI('analysis')">&lt;&lt; 生成AI分析</button>
-        <span class="ai-refresh" onclick="generateAI('analysis')">重新生成 &#8635;</span>
+        <button type="button" class="ai-generate-btn" onclick="generateAI('analysis')">&lt;&lt; 生成AI分析</button>
+        <button type="button" class="ai-refresh" onclick="generateAI('analysis')">重新生成 &#8635;</button>
       </div>
       <div class="ai-text" id="aiAnalysisText">${aiText}</div>
     </div>
@@ -722,7 +785,7 @@ function renderCreatorWorkbench(){
     <tr>
       <td><input type="checkbox" class="item-check" checked data-uid="${d.creator_uid||d.creator_id||''}" data-name="${String(d.creator_name||d.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"></td>
       <td>${(state.invitePage-1)*pageSize+i+1}</td>
-      <td><a class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(d.creator_name||d.name||'')}')">${d.creator_name||d.name||d.creator_or_pin||('达人'+(i+1))}</a></td>
+      <td><button type="button" class="clickable-link" onclick="drillToContent('creator_name','${encodeURIComponent(d.creator_name||d.name||'')}')">${d.creator_name||d.name||d.creator_or_pin||('达人'+(i+1))}</button></td>
       <td class="num">${fmt(d.content_count||0)}</td>
       <td class="num">${fmt(d.play_count||0)}</td>
       <td class="num">${fmt(d.interaction_count||0)}</td>
@@ -791,19 +854,19 @@ function renderCreatorWorkbench(){
     </div>
 
     <!-- Tabs -->
-    <div class="workbench-tabs">
-      <div class="workbench-tab ${state.activeWB==='tabInvite'?'active':''}" onclick="switchWBTab(this,'tabInvite')">&#128203; 达人建联工作台</div>
-      <div class="workbench-tab ${state.activeWB==='tabChurn'?'active':''}" onclick="switchWBTab(this,'tabChurn')">&#9888;&#65039; 流失预警</div>
-      <div class="workbench-tab ${state.activeWB==='tabHighValue'?'active':''}" onclick="switchWBTab(this,'tabHighValue')">&#128142; 高价值基本盘</div>
-      <div class="workbench-tab ${state.activeWB==='tabRoi'?'active':''}" onclick="switchWBTab(this,'tabRoi')">&#128200; 投放ROI分析</div>
+    <div class="workbench-tabs" role="tablist" aria-label="达人工作台功能">
+      <button type="button" id="tabInviteTab" class="workbench-tab ${state.activeWB==='tabInvite'?'active':''}" data-tab="tabInvite" role="tab" aria-selected="${state.activeWB==='tabInvite'}" aria-controls="tabInvite" onclick="switchWBTab('tabInvite')">&#128203; 达人建联工作台</button>
+      <button type="button" id="tabChurnTab" class="workbench-tab ${state.activeWB==='tabChurn'?'active':''}" data-tab="tabChurn" role="tab" aria-selected="${state.activeWB==='tabChurn'}" aria-controls="tabChurn" onclick="switchWBTab('tabChurn')">&#9888;&#65039; 流失预警</button>
+      <button type="button" id="tabHighValueTab" class="workbench-tab ${state.activeWB==='tabHighValue'?'active':''}" data-tab="tabHighValue" role="tab" aria-selected="${state.activeWB==='tabHighValue'}" aria-controls="tabHighValue" onclick="switchWBTab('tabHighValue')">&#128142; 高价值基本盘</button>
+      <button type="button" id="tabRoiTab" class="workbench-tab ${state.activeWB==='tabRoi'?'active':''}" data-tab="tabRoi" role="tab" aria-selected="${state.activeWB==='tabRoi'}" aria-controls="tabRoi" onclick="switchWBTab('tabRoi')">&#128200; 投放ROI分析</button>
     </div>
 
     <!-- Tab 1: 待建联 -->
-    <div class="workbench-panel ${state.activeWB==='tabInvite'?'active':''}" id="tabInvite">
+    <div class="workbench-panel ${state.activeWB==='tabInvite'?'active':''}" id="tabInvite" role="tabpanel" aria-labelledby="tabInviteTab" ${state.activeWB==='tabInvite'?'':'hidden'}>
       <div class="invite-toolbar">
         <input type="checkbox" class="check-all" checked onchange="toggleCheckAll(this)"> 全选
         <button class="primary" onclick="autoGenerateText()">&#129302; 自动生成话术</button>
-        <button onclick="sendInvites()">&#128220; 一键建联</button>
+        <button type="button" id="sendInvitesBtn" ${state.inviteSending?'disabled':''} aria-busy="${state.inviteSending}" onclick="sendInvites()">&#128220; ${state.inviteSending?'提交中...':'一键建联'}</button>
         <div class="spacer"></div>
         <span style="font-size:11px;color:var(--muted)">共 ${inviteCount} 位待建联达人</span>
       </div>
@@ -817,7 +880,7 @@ function renderCreatorWorkbench(){
     </div>
 
     <!-- Tab 2: 流失预警 -->
-    <div class="workbench-panel ${state.activeWB==='tabChurn'?'active':''}" id="tabChurn">
+    <div class="workbench-panel ${state.activeWB==='tabChurn'?'active':''}" id="tabChurn" role="tabpanel" aria-labelledby="tabChurnTab" ${state.activeWB==='tabChurn'?'':'hidden'}>
       <div class="table-scroll">
         <table class="data-table">
           <thead><tr><th>#</th><th>达人昵称</th><th>本期播放/上期播放</th><th>播放同比</th><th>本期蓝链/上期蓝链</th><th>蓝链同比</th><th>本月销量/上月销量</th><th>销量同比</th><th>状态</th><th>建议动作</th></tr></thead>
@@ -828,7 +891,7 @@ function renderCreatorWorkbench(){
     </div>
 
     <!-- Tab 3: 高价值基本盘 -->
-    <div class="workbench-panel ${state.activeWB==='tabHighValue'?'active':''}" id="tabHighValue">
+    <div class="workbench-panel ${state.activeWB==='tabHighValue'?'active':''}" id="tabHighValue" role="tabpanel" aria-labelledby="tabHighValueTab" ${state.activeWB==='tabHighValue'?'':'hidden'}>
       <div class="table-scroll">
         <table class="data-table">
           <thead><tr><th>序号</th><th>达人昵称</th><th class="num">内容数量</th><th class="num">播放</th><th class="num">互动</th><th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th>推荐理由</th></tr></thead>
@@ -838,10 +901,10 @@ function renderCreatorWorkbench(){
     </div>
 
     <!-- Tab 4: 投放ROI分析 -->
-    <div class="workbench-panel ${state.activeWB==='tabRoi'?'active':''}" id="tabRoi">
+    <div class="workbench-panel ${state.activeWB==='tabRoi'?'active':''}" id="tabRoi" role="tabpanel" aria-labelledby="tabRoiTab" ${state.activeWB==='tabRoi'?'':'hidden'}>
       <div class="invite-toolbar">
-        <button onclick="importInvestmentData()">&#128196; 导入费用明细</button><input id="roiFileInput" type="file" accept=".xlsx" hidden onchange="uploadInvestmentData(this)">
-        <select id="roiPeriodSelect" onchange="loadRoiData(this.value)"><option value="30" ${state.roiTrackingDays===30?'selected':''}>30天</option><option value="60" ${state.roiTrackingDays===60?'selected':''}>60天</option><option value="90" ${state.roiTrackingDays===90?'selected':''}>90天</option></select>
+        <button type="button" id="roiImportBtn" ${state.roiImporting||state.roiLoading?'disabled':''} aria-busy="${state.roiImporting}" onclick="importInvestmentData()">&#128196; ${state.roiImporting?'导入中...':'导入费用明细'}</button><input id="roiFileInput" type="file" accept=".xlsx" hidden onchange="uploadInvestmentData(this)">
+        <select id="roiPeriodSelect" ${state.roiImporting||state.roiLoading?'disabled':''} aria-busy="${state.roiLoading}" onchange="loadRoiData(this.value)"><option value="30" ${state.roiTrackingDays===30?'selected':''}>30天</option><option value="60" ${state.roiTrackingDays===60?'selected':''}>60天</option><option value="90" ${state.roiTrackingDays===90?'selected':''}>90天</option></select>
         <span style="font-size:11px;color:var(--muted)">投后追踪周期</span>
       </div>
       <div class="table-scroll">
@@ -872,13 +935,11 @@ function renderFooter(){
 }
 
 // ─── Tab Switching ────────────────────────────────────────────────────────────
-function switchWBTab(el,tabId){
+function switchWBTab(tabId){
+  if(!tabId)return;
   state.activeWB=tabId;
-  $$('.workbench-tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  $$('.workbench-panel').forEach(p=>p.classList.remove('active'));
-  $(`#${tabId}`).classList.add('active');
-  if(tabId==='tabRoi'&&!state.roiRows.length)loadRoiData(state.roiTrackingDays);
+  renderApp();
+  if(tabId==='tabRoi'&&!state.roiRows.length&&!state.roiLoading&&!state.roiImporting)loadRoiData(state.roiTrackingDays);
 }
 
 function toggleCheckAll(master){
@@ -965,6 +1026,7 @@ async function loadDailyData(period){
 let dashboardRequestId=0;
 async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
   const requestId=++dashboardRequestId;
+  state.dashboardLoading=true;
   if(!moduleOnly)showLoading('正在加载所选周期数据...');
   state.analysisLoading=true;
   if(!moduleOnly)state.moduleCache={};
@@ -981,7 +1043,7 @@ async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
     if(state.activeModule==='industry')moduleRequests=[apiGet(`/brand-rankings?limit=20${join}`),apiGet(`/creator-comparison?scope=all${join}`),apiGet(`/top-creators?limit=5000&scope=thunderbird${join}`)];
     if(state.activeModule==='creator')moduleRequests=[apiGet(`/action-plan?${explicit.slice(1)}`),apiGet(`/creator-comparison?scope=all${join}`)];
     const [commonResult,moduleResult]=await Promise.all([Promise.all(common),Promise.all(moduleRequests)]);
-    if(requestId!==dashboardRequestId)return;
+    if(requestId!==dashboardRequestId)return false;
     const [kpis,daily,analysis]=commonResult;
     let tasks=null,creators=null,thunderbirdCreators=null,comparisons=null,brands=null,plan=null;
     if(state.activeModule==='platform')[tasks,creators]=moduleResult;
@@ -995,8 +1057,8 @@ async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
     if(state.activeModule==='industry')Object.assign(payload,{brands,comparisons,thunderbirdCreators});
     if(state.activeModule==='creator')Object.assign(payload,{plan,comparisons});
     state.moduleCache[periodCacheKey(state.activeModule)]=payload;
-  }catch(err){console.error(err);alert(`数据加载失败：${err.message}`);}
-  finally{if(requestId===dashboardRequestId){state.analysisLoading=false;hideLoading();}}
+  }catch(err){console.error(err);showFeedback(`数据加载失败：${err.message}`,'error');return false;}
+  finally{if(requestId===dashboardRequestId){state.analysisLoading=false;state.dashboardLoading=false;hideLoading();}}
   renderApp();
   updateFooter();
   if(!moduleOnly){
@@ -1009,6 +1071,7 @@ async function loadDashboard(days,startDate='',endDate='',moduleOnly=false){
     };
     if('requestIdleCallback' in window)requestIdleCallback(preload,{timeout:1500});else setTimeout(preload,300);
   }
+  return true;
 }
 
 function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan,thunderbirdCreators,comparisons){
@@ -1025,17 +1088,26 @@ function mergeState(kpis,dailyResult,prevResult,daily,tasks,creators,brands,plan
 }
 
 async function refreshAll(){
+  if(state.refreshing||state.dashboardLoading){showFeedback('数据正在加载，请稍候再试。','info');return;}
   const btn=$('#refreshBtn'),icon=$('#refreshIcon'),label=$('#refreshLabel');
+  state.refreshing=true;
+  setControlBusy('#refreshBtn',true);
   btn.classList.add('loading');icon.innerHTML='<span class="spinner"></span>';label.textContent='刷新中...';
-  try{await loadDailyData(state.selectedPeriod);label.textContent='已更新';setTimeout(()=>{label.textContent='刷新';},2000);}
-  catch(e){console.error(e);label.textContent='刷新失败';setTimeout(()=>{label.textContent='刷新';},3000);}
-  finally{btn.classList.remove('loading');}
+  try{
+    const loaded=await loadDailyData(state.selectedPeriod);
+    if(loaded===false)throw new Error('服务器未返回有效数据');
+    label.textContent='已更新';showFeedback('数据已成功刷新。','success');
+    setTimeout(()=>{if(!state.refreshing)label.textContent='刷新';},2000);
+  }catch(e){console.error(e);label.textContent='刷新失败';showFeedback(`刷新失败：${e.message}`,'error');setTimeout(()=>{if(!state.refreshing)label.textContent='刷新';},3000);}
+  finally{state.refreshing=false;btn.classList.remove('loading');setControlBusy('#refreshBtn',false);}
 }
 
 // ─── AI Generation ────────────────────────────────────────────────────────────
 async function generateAI(type){
+  if(state.aiGenerating){showFeedback('AI分析正在生成，请稍候。','info');return;}
   const textEl=$('#aiAnalysisText');
   if(!textEl)return;
+  state.aiGenerating=true;updateAIControls(true);
   const origText=textEl.textContent;
   textEl.innerHTML='<span class="ai-loading">&#9203; AI正在生成分析文案，请稍候...</span>';
   try{
@@ -1052,11 +1124,15 @@ async function generateAI(type){
       state.aiFresh=new Date().toLocaleString('zh-CN');
       textEl.textContent=result.text;
       try{localStorage.setItem('cps_dashboard_ai_'+state.selectedPeriod,JSON.stringify({text:result.text,fresh:state.aiFresh}));}catch(e){}
+      showFeedback('AI分析已生成。','success');
     }else{
-      textEl.textContent='[生成失败，请重试]';
+      throw new Error('接口未返回分析内容');
     }
   }catch(err){
-    textEl.textContent=`[生成失败: ${err.message}]`;
+    textEl.textContent=origText||`[生成失败: ${err.message}]`;
+    showFeedback(`AI分析生成失败：${err.message}`,'error');
+  }finally{
+    state.aiGenerating=false;updateAIControls(false);
   }
 }
 
@@ -1072,30 +1148,47 @@ function autoGenerateText(){
 }
 
 function sendInvites(){
+  if(state.inviteSending){showFeedback('建联任务正在提交，请勿重复点击。','info');return;}
   const checked=[...$$('.item-check:checked')];
-  if(!checked.length){alert('请先选择达人');return;}
+  if(!checked.length){showFeedback('请先选择达人。','error');return;}
   const tasks=checked.map(x=>({creator_uid:x.dataset.uid,creator_name:x.dataset.name,message:buildOutreachMessage(x.dataset.name)}));
-  if(tasks.some(x=>!x.creator_uid)){alert('部分达人缺少B站UID，请补齐后再生成任务。');return;}
+  if(tasks.some(x=>!x.creator_uid)){showFeedback('部分达人缺少B站UID，请补齐后再生成任务。','error');return;}
+  state.inviteSending=true;
+  setControlBusy('#sendInvitesBtn',true);
+  renderApp();
   const payload={version:1,created_at:new Date().toISOString(),period_start:state.periodStart,period_end:state.periodEnd,tasks};
-  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  window.location.href=`cps-bilibili://send?payload=${encoded}`;
-  setTimeout(()=>alert(`已将 ${tasks.length} 位达人交给本机建联助手发送。助手会自动复用B站登录状态，并保存发送回执。`),500);
+  try{
+    const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    window.location.href=`cps-bilibili://send?payload=${encoded}`;
+    showFeedback(`已提交 ${tasks.length} 位达人的建联任务，等待本机助手发送回执。`,'success');
+  }catch(err){state.inviteSending=false;renderApp();showFeedback(`建联任务提交失败：${err.message}`,'error');return;}
+  setTimeout(()=>{state.inviteSending=false;renderApp();},2500);
 }
 
 function importInvestmentData(){
+  if(state.roiLoading||state.roiImporting){showFeedback('ROI数据正在处理，请稍候。','info');return;}
   $('#roiFileInput')?.click();
 }
 async function loadRoiData(days=30){
-  state.roiTrackingDays=Number(days)||30;state.roiLoading=true;
-  try{const data=await apiGet(`/roi-analysis?tracking_days=${state.roiTrackingDays}`);state.roiRows=data.items||[];}
-  catch(e){alert('ROI数据读取失败：'+e.message);}finally{state.roiLoading=false;renderApp();}
+  if(state.roiLoading||state.roiImporting){showFeedback('ROI数据正在处理，请稍候。','info');return false;}
+  const previousDays=state.roiTrackingDays;
+  state.roiTrackingDays=Number(days)||30;state.roiLoading=true;renderApp();
+  try{
+    const data=await apiGet(`/roi-analysis?tracking_days=${state.roiTrackingDays}`);state.roiRows=data.items||[];
+    showFeedback(`ROI数据已更新（${state.roiTrackingDays}天）。`,'success');
+    return true;
+  }catch(e){state.roiTrackingDays=previousDays;showFeedback(`ROI数据读取失败：${e.message}`,'error');return false;}
+  finally{state.roiLoading=false;renderApp();}
 }
 async function uploadInvestmentData(input){
+  if(state.roiLoading||state.roiImporting){showFeedback('ROI数据正在处理，请稍候。','info');return false;}
   const file=input.files?.[0];if(!file)return;
+  state.roiImporting=true;renderApp();
   const form=new FormData();form.append('file',file);showLoading('正在导入并匹配ROI数据...');
-  try{const r=await fetch(API+'/roi-import',{method:'POST',body:form});const data=await r.json();if(!r.ok)throw new Error(data.error||'导入失败');state.roiRows=data.analysis?.items||[];state.roiTrackingDays=30;alert(`成功导入 ${data.count} 条投入记录，已完成内容及销售数据匹配。`);renderApp();}
-  catch(e){alert('ROI导入失败：'+e.message);}finally{input.value='';hideLoading();}
+  try{const r=await fetch(API+'/roi-import',{method:'POST',body:form});const data=await r.json();if(!r.ok)throw new Error(data.error||'导入失败');state.roiRows=data.analysis?.items||[];state.roiTrackingDays=30;showFeedback(`成功导入 ${data.count} 条投入记录，已完成内容及销售数据匹配。`,'success');return true;}
+  catch(e){showFeedback(`ROI导入失败：${e.message}`,'error');return false;}
+  finally{input.value='';state.roiImporting=false;hideLoading();renderApp();}
 }
 
 function updateFooter(){
@@ -1108,7 +1201,18 @@ function updateFooter(){
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded',()=>{loadDailyData('7');});
+document.addEventListener('DOMContentLoaded',()=>{
+  document.addEventListener('click',event=>{
+    if(state.customDateOpen){
+      const banner=$('#filterBanner');
+      if(banner&&!banner.contains(event.target))closeCustomDatePicker();
+    }
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&state.customDateOpen){event.preventDefault();closeCustomDatePicker();}
+  });
+  loadDailyData('7');
+});
 
 // Let the host page own scrolling so this dashboard visually behaves like a
 // native system module instead of a nested framed application.

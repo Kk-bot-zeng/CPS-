@@ -201,8 +201,9 @@ export default function DashboardApp() {
   const categoryPage = page === "总览" || page === "数据导入" || page === "B站操盘看板" || page === "达人/团长管理" || page === "文案生成";
   const effectiveChannel: ChannelFilter = category === "monitor" && (page === "总览" || page === "数据导入" || page === "达人/团长管理") ? "jd" : channel;
   const [warningData, setWarningData] = useState<WarningPayload | null>(null);
+  const [warningError, setWarningError] = useState("");
   const [warningDismissed, setWarningDismissed] = useState(false);
-  const refreshWarnings = () => loadWarnings("all").then(setWarningData).catch(() => {});
+  const refreshWarnings = () => loadWarnings("all").then((data) => { setWarningData(data); setWarningError(""); }).catch((error) => setWarningError(error instanceof Error ? error.message : "动销预警读取失败，请稍后重试"));
   useEffect(() => { void refreshWarnings(); const timer=window.setInterval(refreshWarnings,5*60_000); return()=>window.clearInterval(timer); }, []);
   async function viewWarnings() {
     const keys=warningData?.rows.filter(x=>x.unread).map(x=>x.resource_key)||[];
@@ -221,14 +222,25 @@ export default function DashboardApp() {
           <img className={collapsed ? "brand-symbol" : "brand-logo"} src={collapsed ? "/brand/ffalcon-symbol.png" : "/brand/ffalcon-horizontal.png"} alt="FFALCON 雷鸟" />
           {!collapsed && <span className="brand-system-name">CPS 经营管理系统</span>}
         </div>
-        <button className="collapse" onClick={() => setCollapsed(!collapsed)}>
+        <button
+          type="button"
+          className="collapse"
+          aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          aria-expanded={!collapsed}
+          aria-controls="dashboard-navigation"
+          title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          onClick={() => setCollapsed(!collapsed)}
+        >
           <Menu size={18} />
         </button>
-        <nav>
+        <nav id="dashboard-navigation" aria-label="主导航">
           {nav.map(({ label, icon: Icon }) => (
             <button
+              type="button"
               key={label}
               className={page === label ? "active" : ""}
+              aria-current={page === label ? "page" : undefined}
+              title={collapsed ? label : undefined}
               onClick={() => {
                 setPage(label);
                 if (label === "B站操盘看板") setCategory("monitor");
@@ -240,7 +252,7 @@ export default function DashboardApp() {
           ))}
         </nav>
         <div className="side-bottom">
-          <button onClick={logout}>
+          <button type="button" onClick={logout}>
             <LogOut size={19} />
             {!collapsed && <span>退出登录</span>}
           </button>
@@ -265,9 +277,9 @@ export default function DashboardApp() {
               <b>运营管理员</b>
               <span>超级管理员</span>
             </div>
-            <ChevronDown size={16} />
           </div>
         </header>
+        {warningError && <div className="notice" role="alert">{warningError}</div>}
         <section className="content">
           {page === "总览" && <RealOverview channel={effectiveChannel} category={category} />}
           <div className="bilibili-page-host" hidden={page !== "B站操盘看板"}>
@@ -725,11 +737,14 @@ function ImportPage({
   const input = useRef<HTMLInputElement>(null);
   const mappingInput = useRef<HTMLInputElement>(null);
   const planInput = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
   const [fileName, setFileName] = useState("");
   const [mappingStatus, setMappingStatus] = useState("正在读取匹配表状态…");
   const [mappingSaving, setMappingSaving] = useState(false);
   const [planStatus, setPlanStatus] = useState("请选择京东渠道后上传计划白名单");
+  const [planSaving, setPlanSaving] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);
   const [saveMessage, setSaveMessage] = useState("");
   const [jobs, setJobs] = useState<ImportJob[]>([]);
@@ -758,7 +773,14 @@ function ImportPage({
   }, [channel, category]);
   useEffect(() => {
     if (channel !== "jd") { setPlanStatus(channel === "all" ? "请选择京东渠道" : "计划白名单仅用于京东"); return; }
-    fetch(`/api/plan-whitelist?channel=jd&category=${category}`).then(r=>r.json()).then(x=>setPlanStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传京东计划白名单")).catch(()=>setPlanStatus("计划白名单读取失败"));
+    fetch(`/api/plan-whitelist?channel=jd&category=${category}`)
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "计划白名单读取失败");
+        return result;
+      })
+      .then((result) => setPlanStatus(result?.file_name ? `当前：${result.file_name}（${result.row_count}条）` : "尚未上传京东计划白名单"))
+      .catch((error) => setPlanStatus(error instanceof Error ? error.message : "计划白名单读取失败"));
   }, [channel, category]);
   function downloadTemplate(kind: "plan" | "sku") {
     const isMonitor=category === "monitor";
@@ -767,16 +789,42 @@ function ImportPage({
       : [{ "SKU": "100000000000", "推广名": "示例：雷鸟电视", "型号": "示例：鹤系列", "是否计入TV销量": "是" }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), kind === "plan" ? "计划白名单" : `${isMonitor?"显示器":"TV"}SKU商品映射`); XLSX.writeFile(wb, kind === "plan" ? `${isMonitor?"显示器":"TV"}_京东计划白名单模板.xlsx` : `${isMonitor?"显示器":"TV"}_SKU商品映射模板.xlsx`);
   }
-  async function loadPlans(file: File) { try { const rows=await parseSpreadsheet(file); const plans=rows.map(r=>String(r["计划名称"]??r["所属计划/活动"]??"").trim()).filter(Boolean); const res=await fetch("/api/plan-whitelist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel:"jd",category,fileName:file.name,plans})}); const x=await res.json(); if(!res.ok) throw new Error(x.error); setPlanStatus(`已生效：${file.name}（${x.rowCount}条）`); } catch(e){setPlanStatus(e instanceof Error?e.message:"上传失败");} }
+  async function loadPlans(file: File) {
+    if (planSaving) return;
+    setPlanSaving(true);
+    setPlanStatus("正在解析并覆盖计划白名单…");
+    try {
+      const rows = await parseSpreadsheet(file);
+      const plans = rows
+        .map((r) => String(r["计划名称"] ?? r["所属计划/活动"] ?? "").trim())
+        .filter(Boolean);
+      const response = await fetch("/api/plan-whitelist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "jd", category, fileName: file.name, plans }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "计划白名单上传失败");
+      setPlanStatus(`已生效：${file.name}（${result.rowCount}条）`);
+    } catch (error) {
+      setPlanStatus(error instanceof Error ? error.message : "计划白名单上传失败");
+    } finally {
+      setPlanSaving(false);
+    }
+  }
   useEffect(() => {
     if (channel === "all") {
       setMappingStatus("请先选择渠道");
       return;
     }
     fetch(`/api/product-mappings?channel=${channel}&category=${category}`)
-      .then((r) => r.json())
-      .then((x) => setMappingStatus(x?.file_name ? `当前：${x.file_name}（${x.row_count}条）` : "尚未上传商品匹配表"))
-      .catch(() => setMappingStatus("匹配表状态读取失败"));
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "匹配表状态读取失败");
+        return result;
+      })
+      .then((result) => setMappingStatus(result?.file_name ? `当前：${result.file_name}（${result.row_count}条）` : "尚未上传商品匹配表"))
+      .catch((error) => setMappingStatus(error instanceof Error ? error.message : "匹配表状态读取失败"));
   }, [channel, category]);
   const summary = useMemo(
     () => ({
@@ -792,6 +840,7 @@ function ImportPage({
       setSaveMessage("请先选择本次导入所属渠道");
       return;
     }
+    if (uploading || saving) return;
     setUploading(true);
     setSaveMessage("");
     setFileName(file.name);
@@ -808,10 +857,12 @@ function ImportPage({
       setSaveMessage(error instanceof Error ? error.message : "订单文件解析失败");
     } finally {
       setUploading(false);
+      setDragging(false);
     }
   }
   async function loadMapping(file: File) {
     if (channel === "all") return setMappingStatus("请先选择渠道");
+    if (mappingSaving) return;
     setMappingSaving(true);
     setMappingStatus("正在解析并覆盖匹配表…");
     try {
@@ -836,6 +887,7 @@ function ImportPage({
       setSaveMessage("请选择渠道后再导入");
       return;
     }
+    if (saving || uploading) return;
     setSaving(true);
     setProgress(0);
     setSaveMessage("");
@@ -921,29 +973,68 @@ function ImportPage({
       <div className="mapping-upload-card">
         <div>
           <b className="channel-rule-title">{channel === "jd" ? "京东 SKU 商品映射" : channel === "douyin" ? "抖音商品型号匹配表" : channel === "tmall" ? "天猫商品型号匹配表" : "请先在顶部选择渠道"}</b>
-          <span>{mappingStatus}</span>
+          <span aria-live="polite">{mappingStatus}</span>
           <small>读取SKU、推广名、型号及“是否计入{category === "monitor" ? "显示器" : "TV"}销量”；上传新文件会覆盖当前版本。</small>
         </div>
-        <input ref={mappingInput} type="file" accept=".xlsx,.xls" hidden
-          onChange={(e) => e.target.files?.[0] && loadMapping(e.target.files[0])} />
+        <input
+          ref={mappingInput}
+          type="file"
+          accept=".xlsx,.xls"
+          hidden
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (file) void loadMapping(file);
+          }}
+        />
         <div className="mapping-actions">
-          <button className="secondary-rule" onClick={() => downloadTemplate("sku")}>下载模板</button>
-          <button disabled={mappingSaving} onClick={() => mappingInput.current?.click()}>
+          <button type="button" className="secondary-rule" onClick={() => downloadTemplate("sku")}>下载模板</button>
+          <button type="button" disabled={mappingSaving} onClick={() => mappingInput.current?.click()}>
             {mappingSaving ? "上传中…" : "上传/更新"}
           </button>
         </div>
       </div>
-      {channel === "jd" && <div className="mapping-upload-card"><div><b>京东计划白名单</b><span>{planStatus}</span><small>仅名单内计划会进入京东同步结果；上传新表覆盖旧表。</small></div><input ref={planInput} type="file" accept=".xlsx,.xls" hidden onChange={(e)=>e.target.files?.[0]&&loadPlans(e.target.files[0])}/><div className="mapping-actions"><button className="secondary-rule" onClick={()=>downloadTemplate("plan")}>下载模板</button><button onClick={()=>planInput.current?.click()}>上传/更新</button></div></div>}
+      {channel === "jd" && <div className="mapping-upload-card"><div><b>京东计划白名单</b><span aria-live="polite">{planStatus}</span><small>仅名单内计划会进入京东同步结果；上传新表覆盖旧表。</small></div><input ref={planInput} type="file" accept=".xlsx,.xls" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void loadPlans(file); }}/><div className="mapping-actions"><button type="button" className="secondary-rule" onClick={()=>downloadTemplate("plan")}>下载模板</button><button type="button" disabled={planSaving} onClick={()=>planInput.current?.click()}>{planSaving ? "上传中…" : "上传/更新"}</button></div></div>}
       <input
         ref={input}
         type="file"
         accept=".xlsx,.xls,.csv"
         hidden
-        onChange={(e) => e.target.files?.[0] && load(e.target.files[0])}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file && !uploading && !saving) void load(file);
+        }}
       />
       <div
-        className={`upload-zone ${orders.length ? "has-data" : ""}`}
-        onClick={() => input.current?.click()}
+        className={`upload-zone ${orders.length ? "has-data" : ""} ${dragging ? "is-dragging" : ""}`}
+        aria-disabled={uploading || saving}
+        aria-busy={uploading || saving}
+        style={dragging ? { borderColor: "#174fc5", background: "#f0f6ff" } : undefined}
+        onClick={() => { if (!uploading && !saving) input.current?.click(); }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!uploading && !saving) event.dataTransfer.dropEffect = "copy";
+        }}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          if (uploading || saving) return;
+          dragDepth.current += 1;
+          setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (!dragDepth.current) setDragging(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          if (uploading || saving) return;
+          const file = event.dataTransfer.files?.[0];
+          if (file) void load(file);
+        }}
       >
         <div className="upload-icon">
           <UploadCloud size={30} />
@@ -951,16 +1042,28 @@ function ImportPage({
         <h3>
           {uploading
               ? "正在解析订单数据…"
+              : saving
+                ? "正在写入订单数据…"
+                : dragging
+                  ? "松开以上传订单文件"
               : orders.length
                 ? `${channelName(channel)}文件解析完成`
                 : "拖拽订单文件到这里，或点击上传"}
         </h3>
         <p>支持 Excel / CSV，自动识别 gmv、gsv 工作表，单文件建议不超过 50MB</p>
-        <button className="primary">
-          {orders.length ? "重新选择文件" : "选择订单文件"}
+        <button
+          type="button"
+          className="primary"
+          disabled={uploading || saving}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!uploading && !saving) input.current?.click();
+          }}
+        >
+          {uploading ? "正在解析…" : saving ? "正在写入…" : orders.length ? "重新选择文件" : "选择订单文件"}
         </button>
       </div>
-      {!orders.length && saveMessage && <div className="import-parse-message">{saveMessage}</div>}
+      {!orders.length && saveMessage && <div className="import-parse-message" role="alert">{saveMessage}</div>}
       </>}
       {orders.length > 0 && (
         <>

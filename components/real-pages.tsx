@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   ChevronDown,
@@ -97,6 +97,9 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const [draftEnd, setDraftEnd] = useState(() => relativeDateKey(-1));
   const [showCustomDates, setShowCustomDates] = useState(false);
   const [dateError, setDateError] = useState("");
+  const dateAnchorRef = useRef<HTMLDivElement>(null);
+  const dateTriggerRef = useRef<HTMLButtonElement>(null);
+  const dateStartRef = useRef<HTMLInputElement>(null);
   const [talent, setTalent] = useState("all");
   const [model, setModel] = useState("all");
   const [productView, setProductView] = useState<"model" | "series">("model");
@@ -109,14 +112,37 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     setDateError("");
     setShowCustomDates(true);
   };
+  const closeDatePicker = (restoreFocus = false) => {
+    setShowCustomDates(false);
+    setDateError("");
+    if (restoreFocus) window.requestAnimationFrame(() => dateTriggerRef.current?.focus());
+  };
   const applyCustomDates = () => {
     if (!draftStart || !draftEnd) return setDateError("请选择完整的开始和结束日期");
     if (draftStart > draftEnd) return setDateError("开始日期不能晚于结束日期");
     setStart(draftStart);
     setEnd(draftEnd);
-    setShowCustomDates(false);
-    setDateError("");
+    closeDatePicker(true);
   };
+  useEffect(() => {
+    if (!showCustomDates) return;
+    window.requestAnimationFrame(() => dateStartRef.current?.focus());
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!dateAnchorRef.current?.contains(event.target as Node)) closeDatePicker(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDatePicker(true);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showCustomDates]);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -167,14 +193,14 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
         </div>
         <div className="real-actions">
           <div className="date-range-bar">
-            <div className="custom-date-anchor">
-              <button className="date-range-trigger" onClick={() => showCustomDates ? setShowCustomDates(false) : openDatePicker()} aria-expanded={showCustomDates}><CalendarDays size={15}/><span>{start}</span><em>至</em><span>{end}</span><ChevronDown size={14}/></button>
-              {showCustomDates && <div className="custom-date-popover">
-                <div className="custom-date-title"><b>自定义时间范围</b><small>选择完成后点击确定应用</small></div>
-                <div className="custom-date-fields"><label>开始日期<input type="date" value={draftStart} onChange={(e) => { setDraftStart(e.target.value); setDateError(""); }} /></label><span>—</span>
+            <div ref={dateAnchorRef} className="custom-date-anchor">
+              <button ref={dateTriggerRef} className="date-range-trigger" onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover"><CalendarDays size={15}/><span>{start}</span><em>至</em><span>{end}</span><ChevronDown size={14}/></button>
+              {showCustomDates && <div id="custom-date-popover" className="custom-date-popover" role="dialog" aria-modal="false" aria-labelledby="custom-date-title">
+                <div id="custom-date-title" className="custom-date-title"><b>自定义时间范围</b><small>选择完成后点击确定应用</small></div>
+                <div className="custom-date-fields"><label>开始日期<input ref={dateStartRef} type="date" value={draftStart} onChange={(e) => { setDraftStart(e.target.value); setDateError(""); }} /></label><span>—</span>
                 <label>结束日期<input type="date" value={draftEnd} min={draftStart} onChange={(e) => { setDraftEnd(e.target.value); setDateError(""); }} /></label></div>
                 {dateError && <p className="custom-date-error">{dateError}</p>}
-                <div className="custom-date-actions"><button onClick={() => setShowCustomDates(false)}>取消</button><button className="primary" onClick={applyCustomDates}>确定</button></div>
+                <div className="custom-date-actions"><button onClick={() => closeDatePicker(true)}>取消</button><button className="primary" onClick={applyCustomDates}>确定</button></div>
               </div>}
             </div>
           </div>
@@ -761,10 +787,10 @@ function RowActions({
 }) {
   return (
     <div className="row-actions">
-      <button onClick={edit}>
+      <button type="button" onClick={edit} aria-label="编辑">
         <Edit3 size={14} />
       </button>
-      <button className="danger" onClick={remove}>
+      <button type="button" className="danger" onClick={remove} aria-label="删除">
         <Trash2 size={14} />
       </button>
     </div>
@@ -942,6 +968,12 @@ function Modal({
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(close);
+  const titleId = useId();
+  closeRef.current = close;
   async function go() {
     setSaving(true);
     setError("");
@@ -953,12 +985,30 @@ function Modal({
       setSaving(false);
     }
   }
+  useEffect(() => {
+    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      window.requestAnimationFrame(() => previousFocus.current?.focus());
+    };
+  }, []);
+  const handleBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) close();
+  };
   return (
-    <div className="modal-backdrop">
-      <div className="form-modal">
+    <div className="modal-backdrop" onMouseDown={handleBackdropMouseDown}>
+      <div ref={modalRef} className="form-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-head">
-          <h3>{title}</h3>
-          <button onClick={close}>
+          <h3 id={titleId}>{title}</h3>
+          <button ref={closeButtonRef} type="button" onClick={close} aria-label={`关闭${title}`}>
             <X size={18} />
           </button>
         </div>

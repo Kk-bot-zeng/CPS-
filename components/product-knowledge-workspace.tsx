@@ -172,6 +172,44 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+/**
+ * Copy text in both secure and non-secure browser contexts.  Clipboard API
+ * calls can be rejected by browser permissions even when the API exists, so
+ * the legacy textarea path is deliberately kept as a user-facing fallback.
+ */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Try the textarea fallback below when permissions or the context block
+      // the modern Clipboard API.
+    }
+  }
+  if (typeof document === "undefined" || !document.body) return false;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  document.body.removeChild(textarea);
+  return copied;
+}
+
 function formatFacts(product: ProductKnowledge | null, fields: KnowledgeField[]) {
   if (!product) return "";
   const lines = [
@@ -454,6 +492,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const productPickerRef = useRef<HTMLDivElement | null>(null);
   const [result, setResult] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -464,6 +503,27 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const channelLabel = channel === "all" ? "全部渠道" : channelName(channel);
   const categoryLabel = categoryName(category);
   const length = form.length === "custom" ? form.customLength : form.length;
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (productPickerRef.current && !productPickerRef.current.contains(event.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [pickerOpen]);
 
   function toggleProduct(id: string) {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -494,6 +554,18 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
     } catch (reason) { setError(reason instanceof Error ? reason.message : "文案生成失败，请稍后重试"); } finally { setGenerating(false); }
   }
 
+  async function handleCopyResult() {
+    const success = await copyTextToClipboard(result);
+    if (success) {
+      setError("");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } else {
+      setCopied(false);
+      setError("复制失败，请检查浏览器剪贴板权限，或手动选择文案复制。");
+    }
+  }
+
   return (
     <div className="generator-layout">
       <div className="panel generator-form-panel">
@@ -509,7 +581,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
           {form.length === "custom" && <label className="cw-field"><span>自定义字数</span><input value={form.customLength} onChange={(event) => setForm({ ...form, customLength: event.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="例如 160" inputMode="numeric" /></label>}
           {selectedIds.length > 1 && <label className="cw-field"><span>多型号生成方式</span><select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}><option value="merge">合并生成一条</option><option value="separate">每个型号分别生成</option></select></label>}
         </div>
-        <div className="cw-product-select-wrap">
+        <div className="cw-product-select-wrap" ref={productPickerRef}>
           <span className="cw-field-label">选择产品型号 <i>*</i></span>
           <button className="cw-product-trigger" onClick={() => setPickerOpen((open) => !open)} aria-expanded={pickerOpen}><span>{selectedProducts.length ? `已选择 ${selectedProducts.length} 个型号` : "搜索并选择一个或多个型号"}</span><ChevronDown size={15} /></button>
           {selectedProducts.length > 0 && <div className="cw-selected-chips">{selectedProducts.map((product) => <button key={product.id} onClick={() => toggleProduct(product.id)}>{product.model}<X size={12} /></button>)}</div>}
@@ -524,7 +596,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
         <div className="generator-actions"><button className="primary cw-generate-btn" onClick={() => void handleGenerate()} disabled={generating || !form.intent.trim() || !selectedProducts.length || !length}>{generating ? <><LoaderCircle size={15} className="cw-spin" /> 生成中…</> : <><Sparkles size={15} /> 生成文案</>}</button><small>生成前请确认型号资料和政策已审核；50字为近似长度控制</small></div>
       </div>
       <div className="generator-result-column">
-        {result ? <div className="panel copywriting-result"><div className="panel-head"><div><h3>生成结果</h3><p>{selectedProducts.map((product) => product.model).join("、")} · {length}字 · 待人工终审</p></div><button onClick={async () => { await navigator.clipboard.writeText(result); setCopied(true); window.setTimeout(() => setCopied(false), 1600); }}><Copy size={14} /> {copied ? "已复制" : "复制文案"}</button></div><div className="cw-result-content"><pre>{result}</pre></div><div className="cw-review-note"><AlertCircle size={14} /> 生成结果已记录资料版本，发布前请人工核对参数、价格和活动政策。</div></div> : <div className="copywriting-empty"><FileText size={42} /><h3>等待生成文案</h3><p>先选择一个或多个型号，设定长度和使用场景，系统会自动引用产品资料库。</p><div className="cw-empty-facts"><CheckCircle2 size={14} /> 已启用防编造校验</div></div>}
+        {result ? <div className="panel copywriting-result"><div className="panel-head"><div><h3>生成结果</h3><p>{selectedProducts.map((product) => product.model).join("、")} · {length}字 · 待人工终审</p></div><button onClick={() => void handleCopyResult()}><Copy size={14} /> {copied ? "已复制" : "复制文案"}</button></div><div className="cw-result-content"><pre>{result}</pre></div><div className="cw-review-note"><AlertCircle size={14} /> 生成结果已记录资料版本，发布前请人工核对参数、价格和活动政策。</div></div> : <div className="copywriting-empty"><FileText size={42} /><h3>等待生成文案</h3><p>先选择一个或多个型号，设定长度和使用场景，系统会自动引用产品资料库。</p><div className="cw-empty-facts"><CheckCircle2 size={14} /> 已启用防编造校验</div></div>}
         {!!history.length && <div className="panel generator-recent"><div className="panel-head"><div><h3>最近生成</h3><p>可在“生成历史”中查看完整记录</p></div></div>{history.slice(0, 3).map((item) => <button key={item.id} onClick={() => setResult(item.content)}><span>{item.products.join("、")}</span><small>{item.length} · {item.createdAt}</small></button>)}</div>}
       </div>
     </div>
@@ -642,5 +714,20 @@ function VersionsTab({ category, versions, onRollback }: { category: ProductCate
 }
 
 function HistoryTab({ history }: { history: CopyHistory[] }) {
-  return <div className="panel copy-history-panel"><div className="panel-head"><div><h3>生成历史</h3><p>记录文案所引用的型号、资料版本和文案长度，可跨设备复核。</p></div><History size={17} /></div>{history.length ? <div className="copy-history-list">{history.map((item) => <details key={item.id}><summary><span><b>{item.products.join("、")}</b><small>{item.scene} · {item.length} · {item.createdAt}</small></span><ChevronDown size={14} /></summary><div><pre>{item.content}</pre><button onClick={() => void navigator.clipboard.writeText(item.content)}><Copy size={13} /> 复制</button></div></details>)}</div> : <div className="history-empty"><History size={30} /><b>暂无生成记录</b><span>完成一次文案生成后，可在这里复核引用的型号和资料版本。</span></div>}</div>;
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState("");
+
+  async function handleCopy(item: CopyHistory) {
+    const success = await copyTextToClipboard(item.content);
+    if (success) {
+      setCopyError("");
+      setCopiedId(item.id);
+      window.setTimeout(() => setCopiedId((current) => current === item.id ? null : current), 1600);
+    } else {
+      setCopiedId(null);
+      setCopyError("复制失败，请检查浏览器剪贴板权限，或手动选择文案复制。");
+    }
+  }
+
+  return <div className="panel copy-history-panel"><div className="panel-head"><div><h3>生成历史</h3><p>记录文案所引用的型号、资料版本和文案长度，可跨设备复核。</p></div><History size={17} /></div>{copyError && <div className="cw-inline-error"><AlertCircle size={14} /> {copyError}</div>}{history.length ? <div className="copy-history-list">{history.map((item) => <details key={item.id}><summary><span><b>{item.products.join("、")}</b><small>{item.scene} · {item.length} · {item.createdAt}</small></span><ChevronDown size={14} /></summary><div><pre>{item.content}</pre><button onClick={() => void handleCopy(item)}><Copy size={13} /> {copiedId === item.id ? "已复制" : "复制"}</button></div></details>)}</div> : <div className="history-empty"><History size={30} /><b>暂无生成记录</b><span>完成一次文案生成后，可在这里复核引用的型号和资料版本。</span></div>}</div>;
 }
