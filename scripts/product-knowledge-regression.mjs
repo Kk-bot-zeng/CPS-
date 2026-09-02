@@ -448,13 +448,15 @@ async function main() {
 
   await expect("未知字段被预览标记为错误且不直接入库", async () => {
     const unknownModel = `unknown-field-${stamp}`;
-    const preview = await postImport("merge", [{ product_category: "tv", canonical_model: unknownModel, unknown_qa_field: "must fail" }]);
-    assert.ok(preview.summary.invalidRows > 0);
-    assert.ok(preview.errors.some((message) => message.includes("未知") || message.includes("停用")));
+    const preview = await request("/api/product-knowledge/import", {
+      method: "POST",
+      body: { action: "preview", category: "tv", mode: "merge", rows: [{ product_category: "tv", canonical_model: unknownModel, unknown_qa_field: "must fail" }] },
+    });
+    expectStatus(preview, 400);
+    assert.ok(preview.body?.errors?.some((message) => message.includes("未知") || message.includes("停用")));
     const list = await request(`/api/product-knowledge?category=tv&q=${encodeURIComponent(unknownModel)}`);
     expectStatus(list, 200);
     assert.ok(!list.body.products.some((item) => item.canonical_model === unknownModel));
-    await request(`/api/product-knowledge/import?importId=${encodeURIComponent(preview.importId)}`, { method: "DELETE" });
   });
 
   if (runAi) {
