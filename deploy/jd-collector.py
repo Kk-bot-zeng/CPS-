@@ -1,15 +1,45 @@
 #!/usr/bin/env python3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from datetime import datetime
+from datetime import datetime, timezone
 import json, os, subprocess, threading
 
 ROOT = "/srv/cps-data/jd-collector"
 TOKEN = os.environ.get("JD_COLLECTOR_TOKEN", "")
 state = {"ready": True, "status":"ready", "message":"两个京东店铺均已登录，可以开始同步", "lastRun":None, "stores":2}
 lock = threading.Lock()
+LOGIN_STATE_FILE = f"{ROOT}/logs/login-state.json"
+LOGIN_STATE_MAX_AGE_SECONDS = 20 * 60
 
 def service_active(name): return subprocess.run(["systemctl","is-active","--quiet",name]).returncode == 0
 def browsers_ready(): return service_active("jd-browser.service") and service_active("jd-browser-store2.service")
+
+def current_status():
+    """Combine task history with the independent, fresh session health check."""
+    result = {**state, "store1": service_active("jd-browser.service"), "store2": service_active("jd-browser-store2.service")}
+    result["ready"] = result["store1"] and result["store2"] and state.get("ready", False)
+    try:
+        with open(LOGIN_STATE_FILE, encoding="utf-8") as handle:
+            login_state = json.load(handle)
+        checked_at = datetime.fromisoformat(login_state["checkedAt"])
+        if checked_at.tzinfo is None:
+            checked_at = checked_at.replace(tzinfo=timezone.utc)
+        fresh = (datetime.now(timezone.utc) - checked_at).total_seconds() <= LOGIN_STATE_MAX_AGE_SECONDS
+        stores = login_state.get("stores", [])
+        result["loginCheckedAt"] = login_state.get("checkedAt")
+        result["loginStores"] = stores
+        if fresh and stores:
+            offline = [item for item in stores if item.get("status") != "online"]
+            if offline:
+                result.update(
+                    ready=False,
+                    status="needs_attention",
+                    message="；".join(f"{item.get('label', item.get('store', '店铺'))}：{item.get('message', '需要重新验证')}" for item in offline),
+                )
+            elif result.get("status") != "running" and "登录已失效" in str(result.get("message", "")):
+                result.update(ready=True, status="ready", message="两个京东店铺当前登录有效，可以开始同步")
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        pass
+    return result
 
 def start_browsers():
     for name in ("jd-browser.service", "jd-browser-store2.service"):
@@ -36,7 +66,7 @@ class Handler(BaseHTTPRequestHandler):
     def valid(self): return bool(TOKEN) and self.headers.get("X-Collector-Token")==TOKEN
     def do_GET(self):
         if not self.valid(): return self.reply(403,{"error":"forbidden"})
-        self.reply(200,{**state,"ready":browsers_ready() and state.get("ready",False),"store1":service_active("jd-browser.service"),"store2":service_active("jd-browser-store2.service")})
+        self.reply(200,current_status())
     def do_POST(self):
         if not self.valid(): return self.reply(403,{"error":"forbidden"})
         if self.path == "/prepare":
