@@ -74,6 +74,45 @@ const seriesOf = (name: string) =>
 const responseCache = new Map<string, { value: unknown; at: number }>();
 const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const relativeDateKey = (days: number) => { const date = new Date(); date.setDate(date.getDate() + days); return localDateKey(date); };
+type DatePreset = "yesterday" | "today" | "last7" | "last30" | "thisMonth" | "lastMonth" | "custom";
+type DateRange = { start: string; end: string };
+const todayDateKey = () => localDateKey(new Date());
+const monthRange = (offset: number): DateRange => {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  return {
+    start: localDateKey(first),
+    end: offset === 0 ? localDateKey(now) : localDateKey(last),
+  };
+};
+const dateRangeForPreset = (preset: Exclude<DatePreset, "custom">): DateRange => {
+  const today = todayDateKey();
+  if (preset === "yesterday") return { start: relativeDateKey(-1), end: relativeDateKey(-1) };
+  if (preset === "today") return { start: today, end: today };
+  if (preset === "last7") return { start: relativeDateKey(-6), end: today };
+  if (preset === "last30") return { start: relativeDateKey(-29), end: today };
+  if (preset === "thisMonth") return monthRange(0);
+  return monthRange(-1);
+};
+const dateToChinese = (date: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "未选择";
+  const [year, month, day] = date.split("-").map(Number);
+  return `${year}年${month}月${day}日`;
+};
+const dateRangeSummary = (start: string, end: string) => {
+  if (!start && !end) return "请选择日期";
+  if (!start) return `未选择至${dateToChinese(end)}`;
+  if (!end) return `${dateToChinese(start)}至未选择`;
+  return start === end ? dateToChinese(start) : `${dateToChinese(start)}至${dateToChinese(end)}`;
+};
+const inclusiveDays = (start: string, end: string) => {
+  if (!start || !end) return 0;
+  const startTime = new Date(`${start}T00:00:00`).getTime();
+  const endTime = new Date(`${end}T00:00:00`).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return 0;
+  return Math.max(0, Math.round((endTime - startTime) / 86_400_000) + 1);
+};
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const isGet = !init?.method || init.method === "GET";
   const cached = responseCache.get(url);
@@ -97,9 +136,15 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const [draftEnd, setDraftEnd] = useState(() => relativeDateKey(-1));
   const [showCustomDates, setShowCustomDates] = useState(false);
   const [dateError, setDateError] = useState("");
+  const [activePreset, setActivePreset] = useState<DatePreset>("yesterday");
+  const [draftPreset, setDraftPreset] = useState<DatePreset>("yesterday");
+  const [loadError, setLoadError] = useState("");
   const dateAnchorRef = useRef<HTMLDivElement>(null);
   const dateTriggerRef = useRef<HTMLButtonElement>(null);
   const dateStartRef = useRef<HTMLInputElement>(null);
+  const requestRef = useRef<{ key: string; controller: AbortController; id: number } | null>(null);
+  const requestIdRef = useRef(0);
+  const optionsRequestRef = useRef<AbortController | null>(null);
   const [talent, setTalent] = useState("all");
   const [model, setModel] = useState("all");
   const [productView, setProductView] = useState<"model" | "series">("model");
@@ -109,20 +154,33 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const openDatePicker = () => {
     setDraftStart(start);
     setDraftEnd(end);
+    setDraftPreset(activePreset);
     setDateError("");
     setShowCustomDates(true);
   };
   const closeDatePicker = (restoreFocus = false) => {
     setShowCustomDates(false);
     setDateError("");
+    setDraftStart(start);
+    setDraftEnd(end);
+    setDraftPreset(activePreset);
     if (restoreFocus) window.requestAnimationFrame(() => dateTriggerRef.current?.focus());
   };
   const applyCustomDates = () => {
     if (!draftStart || !draftEnd) return setDateError("请选择完整的开始和结束日期");
     if (draftStart > draftEnd) return setDateError("开始日期不能晚于结束日期");
+    if (draftStart > todayDateKey() || draftEnd > todayDateKey()) return setDateError("不能选择未来日期");
+    setActivePreset(draftPreset);
     setStart(draftStart);
     setEnd(draftEnd);
     closeDatePicker(true);
+  };
+  const applyPreset = (preset: Exclude<DatePreset, "custom">) => {
+    const next = dateRangeForPreset(preset);
+    setDraftPreset(preset);
+    setDraftStart(next.start);
+    setDraftEnd(next.end);
+    setDateError("");
   };
   useEffect(() => {
     if (!showCustomDates) return;
@@ -144,31 +202,53 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     };
   }, [showCustomDates]);
   const load = useCallback(async () => {
+    const url = `/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=${encodeURIComponent(talent)}&model=${encodeURIComponent(model)}`;
+    if (requestRef.current?.key === url) return;
+    requestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const request = { key: url, controller, id: requestIdRef.current + 1 };
+    requestIdRef.current = request.id;
+    requestRef.current = request;
     setLoading(true);
+    setLoadError("");
     try {
-      setSummary(
-        await jsonFetch(
-          `/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=${encodeURIComponent(talent)}&model=${encodeURIComponent(model)}`,
-        ),
-      );
+      const next = await jsonFetch<Summary>(url, { signal: controller.signal });
+      if (!controller.signal.aborted && requestRef.current?.id === request.id) setSummary(next);
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+      if (requestRef.current?.id === request.id) setLoadError(error instanceof Error ? error.message : "数据加载失败");
     } finally {
-      setLoading(false);
+      if (requestRef.current?.id === request.id) {
+        requestRef.current = null;
+        setLoading(false);
+      }
     }
   }, [start, end, channel, category, talent, model]);
   const downloadFiltered = () => {
     window.location.assign(`/api/dashboard-export?${new URLSearchParams({ start, end, channel, category, talent, model }).toString()}`);
   };
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
   useEffect(() => {
-    jsonFetch<Summary>(`/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=all&model=all`)
+    optionsRequestRef.current?.abort();
+    const controller = new AbortController();
+    optionsRequestRef.current = controller;
+    jsonFetch<Summary>(`/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=all&model=all`, { signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setTalentOptions(data.talents.map((x) => ({ value: x.name, label: x.name })));
         setModelOptions(data.seriesProducts.map((x) => ({ value: x.name, label: x.name })));
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (!controller.signal.aborted && !(error instanceof DOMException && error.name === "AbortError")) return;
+      });
+    return () => controller.abort();
   }, [start, end, channel, category]);
+  useEffect(() => () => {
+    requestRef.current?.controller.abort();
+    optionsRequestRef.current?.abort();
+  }, []);
   if (loading) return <Loading />;
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
@@ -189,24 +269,42 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
           <h2>
             {category === "tv" ? "TV" : "显示器"}经营总览 · {channel === "all" ? "全部渠道" : channelName(channel)}
           </h2>
-          <p>以下数据实时读取自Supabase订单库</p>
         </div>
         <div className="real-actions">
-          <div className="date-range-bar">
+          <div className="date-range-bar" role="group" aria-label="时间筛选">
             <div ref={dateAnchorRef} className="custom-date-anchor">
-              <button ref={dateTriggerRef} className="date-range-trigger" onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover"><CalendarDays size={15}/><span>{start}</span><em>至</em><span>{end}</span><ChevronDown size={14}/></button>
+              <button ref={dateTriggerRef} type="button" className="date-range-trigger" onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover" aria-label={`时间范围：${dateRangeSummary(start, end)}，共${inclusiveDays(start, end)}天`}>
+                <CalendarDays size={15}/>
+                <span className="date-trigger-copy"><b>{dateRangeSummary(start, end)}</b><small>共 {inclusiveDays(start, end)} 天</small></span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
               {showCustomDates && <div id="custom-date-popover" className="custom-date-popover" role="dialog" aria-modal="false" aria-labelledby="custom-date-title">
-                <div id="custom-date-title" className="custom-date-title"><b>自定义时间范围</b><small>选择完成后点击确定应用</small></div>
-                <div className="custom-date-fields"><label>开始日期<input ref={dateStartRef} type="date" value={draftStart} onChange={(e) => { setDraftStart(e.target.value); setDateError(""); }} /></label><span>—</span>
-                <label>结束日期<input type="date" value={draftEnd} min={draftStart} onChange={(e) => { setDraftEnd(e.target.value); setDateError(""); }} /></label></div>
-                {dateError && <p className="custom-date-error">{dateError}</p>}
-                <div className="custom-date-actions"><button onClick={() => closeDatePicker(true)}>取消</button><button className="primary" onClick={applyCustomDates}>确定</button></div>
+                <div id="custom-date-title" className="custom-date-title"><b>时间范围</b><span>{dateRangeSummary(draftStart, draftEnd)} · 共 {inclusiveDays(draftStart, draftEnd)} 天</span></div>
+                <div className="date-filter-layout">
+                  <div className="date-filter-shortcuts" role="listbox" aria-label="快捷时间范围">
+                    <button type="button" role="option" aria-selected={draftPreset === "yesterday"} className={draftPreset === "yesterday" ? "active" : ""} onClick={() => applyPreset("yesterday")}>昨日</button>
+                    <button type="button" role="option" aria-selected={draftPreset === "today"} className={draftPreset === "today" ? "active" : ""} onClick={() => applyPreset("today")}>今日</button>
+                    <button type="button" role="option" aria-selected={draftPreset === "last7"} className={draftPreset === "last7" ? "active" : ""} onClick={() => applyPreset("last7")}>近7天</button>
+                    <button type="button" role="option" aria-selected={draftPreset === "last30"} className={draftPreset === "last30" ? "active" : ""} onClick={() => applyPreset("last30")}>近30天</button>
+                    <button type="button" role="option" aria-selected={draftPreset === "thisMonth"} className={draftPreset === "thisMonth" ? "active" : ""} onClick={() => applyPreset("thisMonth")}>本月</button>
+                    <button type="button" role="option" aria-selected={draftPreset === "lastMonth"} className={draftPreset === "lastMonth" ? "active" : ""} onClick={() => applyPreset("lastMonth")}>上月</button>
+                    <button type="button" role="option" aria-selected={draftPreset === "custom"} className={draftPreset === "custom" ? "active" : ""} onClick={() => { setDraftPreset("custom"); setDateError(""); }}>自定义</button>
+                  </div>
+                  <div className="date-filter-main">
+                    <div className="custom-date-fields"><label htmlFor="overview-date-start">开始<input id="overview-date-start" ref={dateStartRef} type="date" value={draftStart} max={todayDateKey()} onChange={(e) => { setDraftPreset("custom"); setDraftStart(e.target.value); setDateError(""); }} /></label><span aria-hidden="true">—</span>
+                    <label htmlFor="overview-date-end">结束<input id="overview-date-end" type="date" value={draftEnd} min={draftStart || undefined} max={todayDateKey()} onChange={(e) => { setDraftPreset("custom"); setDraftEnd(e.target.value); setDateError(""); }} /></label></div>
+                    <div className="date-draft-summary" aria-live="polite"><span>已选择</span><b>{dateRangeSummary(draftStart, draftEnd)}</b><small>共 {inclusiveDays(draftStart, draftEnd)} 天</small></div>
+                    {dateError && <p className="custom-date-error" role="alert">{dateError}</p>}
+                    <div className="custom-date-actions"><button type="button" onClick={() => closeDatePicker(true)}>取消</button><button type="button" className="primary" onClick={applyCustomDates}>确定</button></div>
+                  </div>
+                </div>
               </div>}
             </div>
           </div>
+          {loadError && <span className="date-range-error" role="alert">{loadError}</span>}
            <BusinessSelect searchable value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
            <BusinessSelect searchable value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
-          <button onClick={load}>
+          <button type="button" onClick={() => void load()} disabled={loading} aria-busy={loading}>
             <RefreshCw size={14} />
             刷新
           </button>

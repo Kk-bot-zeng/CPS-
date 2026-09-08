@@ -42,18 +42,42 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .section-header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
 .section-header h2{font-size:15px;font-weight:700;color:var(--dark)}
 
-/* ─── Date Filter Banner ─── */
-.filter-banner{background:linear-gradient(90deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:var(--radius);padding:12px 20px;display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
-.filter-banner .filter-label{font-size:12px;color:#1e40af;font-weight:700;white-space:nowrap}
-.filter-badge-group{display:flex;gap:4px;flex-wrap:wrap}
-.filter-badge{padding:4px 12px;border-radius:4px;border:1px solid #93c5fd;background:#fff;font:inherit;font-size:12px;cursor:pointer;transition:all .15s;color:var(--text)}
-.filter-badge:hover{border-color:var(--blue);color:var(--blue)}
-.filter-badge.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.filter-custom-date{display:none;align-items:center;gap:6px}
-.filter-custom-date.show{display:flex}
-.filter-custom-date input{padding:4px 8px;border:1px solid #93c5fd;border-radius:4px;font-size:12px}
-.filter-custom-date button{padding:4px 10px;border:1px solid #93c5fd;background:#fff;border-radius:4px;cursor:pointer;font-size:11px}
-.date-range-info{margin-left:auto;font-size:12px;color:#1e40af;font-weight:600;white-space:nowrap}
+/* ─── Compact Date Filter ─── */
+.filter-banner{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 9px;display:flex;align-items:center;gap:8px;margin-bottom:16px;min-height:48px;box-shadow:0 1px 4px rgba(35,55,80,.04)}
+.date-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:32px;padding:0 5px;border:0;border-radius:7px;background:transparent;color:#1e3a68;font:600 12px/1.4 inherit;text-align:left;cursor:pointer}
+.date-filter-trigger:hover{background:#f7faff;color:var(--blue)}
+.date-filter-trigger:focus-visible{outline:2px solid #93b8ec;outline-offset:2px}
+.date-filter-trigger .date-trigger-summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.date-filter-trigger .date-trigger-chevron{color:#7b8ca5;font-size:13px;transition:transform .15s ease}
+.date-filter-trigger[aria-expanded="true"] .date-trigger-chevron{transform:rotate(180deg);color:var(--blue)}
+.filter-badge-group{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0}
+.filter-badge{height:30px;padding:0 11px;border-radius:6px;border:1px solid transparent;background:transparent;font:inherit;font-size:12px;cursor:pointer;transition:background .15s,color .15s,border-color .15s;white-space:nowrap;color:#526075}
+.filter-badge:hover{border-color:#cfe0fb;background:#f4f8ff;color:var(--blue)}
+.filter-badge.active{background:#eaf2ff;color:var(--blue);border-color:#cfe0fb;font-weight:600}
+.filter-badge.pending{border-style:dashed;border-color:#8eb2e8;background:#f6f9ff;color:#1d5bb8}
+.filter-custom-date{position:absolute;top:calc(100% + 8px);left:0;z-index:120;display:none;width:min(520px,calc(100vw - 32px));padding:14px;background:#fff;border:1px solid #cfe0fb;border-radius:10px;box-shadow:0 12px 30px rgba(32,72,130,.16)}
+.filter-custom-date.show{display:block}
+.filter-popover-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;color:#1e3a68;font-size:12px;font-weight:700}
+.filter-popover-heading .draft-label{font-size:11px;font-weight:500;color:#b36b00}
+.filter-popover-section{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid #edf1f7}
+.filter-popover-section:last-of-type{padding-bottom:0;margin-bottom:0;border-bottom:0}
+.filter-popover-section-title{display:block;margin-bottom:7px;color:var(--muted);font-size:11px;font-weight:600}
+.filter-custom-date .custom-date-fields{display:grid;grid-template-columns:1fr 18px 1fr;align-items:center;gap:7px}
+.filter-custom-date label{display:grid;gap:4px;color:var(--muted);font-size:11px}
+.filter-custom-date input{width:100%;height:32px;padding:0 8px;border:1px solid #c9d7ea;border-radius:6px;background:#fff;color:var(--text);font:inherit;font-size:12px}
+.filter-custom-date input:focus{outline:2px solid #bfdbfe;outline-offset:1px;border-color:#6ea0e7}
+.filter-custom-date .date-separator{text-align:center;color:#94a3b8;padding-top:15px}
+.filter-custom-date .custom-date-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:13px;padding-top:11px;border-top:1px solid #edf1f7}
+.filter-custom-date button,.filter-action{height:30px;padding:0 12px;border-radius:6px;border:1px solid #c9d7ea;background:#fff;color:#526075;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.filter-custom-date button:hover,.filter-action:hover{border-color:#94b7e8;color:var(--blue);background:#f7faff}
+.filter-custom-date .filter-apply,.filter-action.filter-apply{border-color:var(--blue);background:var(--blue);color:#fff}
+.filter-custom-date .filter-apply:hover,.filter-action.filter-apply:hover{background:#1d5fc8;color:#fff}
+.filter-action:disabled,.filter-custom-date button:disabled{opacity:.5;cursor:not-allowed}
+.date-filter-actions{display:flex;align-items:center;gap:6px;margin-left:2px;flex-shrink:0}
+.date-range-info{margin-left:auto;color:#667085;font-size:11px;white-space:nowrap}
+.date-range-info strong{color:#1e3a68;font-weight:600}
+.date-filter-status{color:#b36b00;font-size:11px;white-space:nowrap}
+@media(max-width:768px){.filter-banner{align-items:flex-start;flex-wrap:wrap;padding:7px}.filter-custom-date{left:4px;right:4px;width:auto}.filter-custom-date .custom-date-fields{grid-template-columns:1fr 14px 1fr}}
 
 /* ─── KPI Cards ─── */
 .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line)}
@@ -226,6 +250,7 @@ const state = {
   moduleCache:{}, moduleLoading:'', roiRows:[], roiTrackingDays:30, roiLoading:false,
   refreshing:false, dashboardLoading:false, aiGenerating:false, inviteSending:false, roiImporting:false,
   customDateOpen:false, customDateDraftStart:'', customDateDraftEnd:'',
+  dateDraftPeriod:'7', dateFilterFocusId:'', dateFilterSubmitting:false,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -265,7 +290,7 @@ async function apiPost(url,body){ const r=await fetch(API+url,{method:'POST',hea
 function fmt(n){ n=Number(n)||0; if(n>=1e6)return(n/1e6).toFixed(1)+'M'; if(n>=1e4)return(n/1e4).toFixed(1)+'万'; return String(n); }
 function fmtY(n){ if(n==null||n===undefined)return'-'; return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-const PERIOD_LABELS={'today':'今天','yesterday':'昨天','7':`近${7}天`, '14':`近${14}天`, '30':`近${30}天`};
+const PERIOD_LABELS={'today':'今天','yesterday':'昨天','7':'近7天','14':'近14天','30':'近30天','current_month':'本月','previous_month':'上月','custom':'自定义'};
 
 function dateQuery(){
   return state.periodStart&&state.periodEnd
@@ -372,92 +397,154 @@ async function switchDashboardModule(module){
   window.scrollTo({top:0,behavior:'auto'});
 }
 
-// ─── A. Date Filter Banner ───────────────────────────────────────────────────
-function renderFilterBanner(){
-  const currentPeriod = state.selectedPeriod;
-  const customOpen=state.customDateOpen;
-  const draftStart=state.customDateDraftStart||(currentPeriod==='custom'?state.periodStart:'');
-  const draftEnd=state.customDateDraftEnd||(currentPeriod==='custom'?state.periodEnd:'');
-  return `
-  <div class="filter-banner" id="filterBanner">
-    <span class="filter-label">&#128197; 全局日期筛选</span>
-    <div class="filter-badge-group">
-      <button type="button" class="filter-badge ${currentPeriod==='today'?'active':''}" aria-pressed="${currentPeriod==='today'}" onclick="setPeriod('today')">今天</button>
-      <button type="button" class="filter-badge ${currentPeriod==='yesterday'?'active':''}" aria-pressed="${currentPeriod==='yesterday'}" onclick="setPeriod('yesterday')">昨天</button>
-      <button type="button" class="filter-badge ${currentPeriod==='7'?'active':''}" aria-pressed="${currentPeriod==='7'}" onclick="setPeriod('7')">近7天</button>
-      <button type="button" class="filter-badge ${currentPeriod==='14'?'active':''}" aria-pressed="${currentPeriod==='14'}" onclick="setPeriod('14')">近14天</button>
-      <button type="button" class="filter-badge ${currentPeriod==='30'?'active':''}" aria-pressed="${currentPeriod==='30'}" onclick="setPeriod('30')">近30天</button>
-      <button type="button" class="filter-badge ${currentPeriod==='custom'?'active':''}" aria-pressed="${customOpen}" aria-expanded="${customOpen}" aria-controls="customDateGroup" onclick="toggleCustomDate()">自定义范围</button>
-    </div>
-    <div class="filter-custom-date ${customOpen?'show':''}" id="customDateGroup">
-      <input type="date" id="startDateInput" aria-label="开始日期" value="${draftStart}" oninput="setCustomDateDraft('start',this.value)">
-      <span>至</span>
-      <input type="date" id="endDateInput" aria-label="结束日期" value="${draftEnd}" oninput="setCustomDateDraft('end',this.value)">
-      <button type="button" onclick="applyCustomDate()">确认</button>
-    </div>
-    <span class="date-range-info" id="dateRangeInfo">${getDateRangeText()}</span>
+// ─── A. Compact date filter ─────────────────────────────────────────────────
+function isoDate(value){
+  const date=value instanceof Date?value:new Date(value);
+  if(Number.isNaN(date.getTime()))return '';
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+function parseIsoDate(value){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return null;
+  const [year,month,day]=String(value).split('-').map(Number);
+  const date=new Date(year,month-1,day);
+  return date.getFullYear()===year&&date.getMonth()===month-1&&date.getDate()===day?date:null;
+}
+function dateFilterBounds(){
+  const today=new Date();today.setHours(0,0,0,0);
+  const latest=parseIsoDate(state.latestAvailableDate)||parseIsoDate(state.periodEnd)||today;
+  const maxDate=latest<today?latest:today;
+  return {today,maxDate,max:isoDate(maxDate)};
+}
+function quickDateRange(period){
+  const {maxDate}=dateFilterBounds();
+  const end=new Date(maxDate);let start=new Date(end);
+  if(period==='yesterday'){end.setDate(end.getDate()-1);start=new Date(end);}
+  else if(period==='today'){start=new Date(end);}
+  else if(period==='current_month'){start=new Date(end.getFullYear(),end.getMonth(),1);}
+  else if(period==='previous_month'){
+    const monthStart=new Date(end.getFullYear(),end.getMonth(),1);
+    end.setTime(monthStart.getTime());end.setDate(0);start=new Date(end.getFullYear(),end.getMonth(),1);
+  }else{const days=Math.max(1,parseInt(period,10)||7);start.setDate(start.getDate()-days+1);}
+  return {start:isoDate(start),end:isoDate(end),days:Math.floor((end-start)/86400000)+1};
+}
+function appliedDateSnapshot(){
+  return {selectedPeriod:state.selectedPeriod,periodStart:state.periodStart,periodEnd:state.periodEnd,
+    customDateDraftStart:state.customDateDraftStart,customDateDraftEnd:state.customDateDraftEnd,
+    dateDraftPeriod:state.dateDraftPeriod,customDateOpen:state.customDateOpen};
+}
+function dateDraftIsDirty(){
+  if(state.dateDraftPeriod==='custom'){
+    return state.selectedPeriod!=='custom'||state.customDateDraftStart!==state.periodStart||state.customDateDraftEnd!==state.periodEnd;
+  }
+  return state.dateDraftPeriod!==state.selectedPeriod;
+}
+function draftRangeText(){
+  if(state.dateDraftPeriod==='custom')return state.customDateDraftStart&&state.customDateDraftEnd?`${state.customDateDraftStart} ~ ${state.customDateDraftEnd}`:'请选择日期';
+  const range=quickDateRange(state.dateDraftPeriod);
+  return `${PERIOD_LABELS[state.dateDraftPeriod]||''} · ${range.start} ~ ${range.end}`;
+}
+function focusDateTrigger(){
+  const id=state.dateFilterFocusId||'dateFilterToggle';
+  state.dateFilterFocusId='';
+  setTimeout(()=>document.getElementById(id)?.focus(),0);
+}
+function renderDateFilterActions(){
+  if(!dateDraftIsDirty()||state.customDateOpen)return '';
+  const busy=state.dashboardLoading||state.dateFilterSubmitting;
+  return `<div class="date-filter-actions" aria-label="待确认的日期范围">
+    <span class="date-filter-status">待确认</span>
+    <button type="button" class="filter-action filter-apply" onclick="confirmDateDraft()" ${busy?'disabled':''}>确认</button>
+    <button type="button" class="filter-action" onclick="cancelDateDraft()" ${busy?'disabled':''}>取消</button>
   </div>`;
 }
-
+function renderFilterBanner(){
+  const currentPeriod=state.selectedPeriod,customOpen=state.customDateOpen;
+  const draftPeriod=state.dateDraftPeriod||currentPeriod;
+  const draftRange=draftPeriod==='custom'
+    ? {start:state.customDateDraftStart||(currentPeriod==='custom'?state.periodStart:'').trim(),end:state.customDateDraftEnd||(currentPeriod==='custom'?state.periodEnd:'').trim()}
+    : quickDateRange(draftPeriod);
+  const draftStart=draftRange.start,draftEnd=draftRange.end;
+  const maxDate=dateFilterBounds().max;
+  const busy=state.dashboardLoading||state.dateFilterSubmitting;
+  const badge=(period,label)=>`<button type="button" class="filter-badge ${currentPeriod===period?'active ':''}${draftPeriod===period&&dateDraftIsDirty()?'pending':''}" aria-pressed="${currentPeriod===period}" onclick="selectDateDraft('${period}')">${label}</button>`;
+  return `<div class="filter-banner" id="filterBanner" role="group" aria-label="日期筛选">
+    <button type="button" id="dateFilterToggle" class="date-filter-trigger" aria-expanded="${customOpen}" aria-controls="customDateGroup" onclick="toggleCustomDate()">
+      <span class="date-trigger-summary" id="dateRangeInfo" role="status">${getDateRangeText()}${dateDraftIsDirty()&&!customOpen?` · 待确认：${draftRangeText()}`:''}</span><span class="date-trigger-chevron" aria-hidden="true">⌄</span>
+    </button>
+    <div class="filter-custom-date ${customOpen?'show':''}" id="customDateGroup" role="dialog" aria-label="日期筛选" aria-modal="false">
+      <div class="filter-popover-heading"><span>日期筛选</span><span class="draft-label" aria-live="polite">${dateDraftIsDirty()?'待确认':''}</span></div>
+      <div class="filter-popover-section"><span class="filter-popover-section-title">快捷范围</span><div class="filter-badge-group">
+        ${badge('today','今天')}${badge('yesterday','昨天')}${badge('7','近7天')}${badge('14','近14天')}${badge('30','近30天')}${badge('current_month','本月')}${badge('previous_month','上月')}${badge('custom','自定义')}
+      </div></div>
+      <div class="filter-popover-section"><span class="filter-popover-section-title">日期范围</span><div class="custom-date-fields">
+        <label>开始日期<input type="date" id="startDateInput" aria-label="开始日期" min="2000-01-01" max="${maxDate}" value="${draftStart}" onchange="setCustomDateDraft('start',this.value)" oninput="setCustomDateDraft('start',this.value)"></label>
+        <span class="date-separator" aria-hidden="true">至</span>
+        <label>结束日期<input type="date" id="endDateInput" aria-label="结束日期" min="2000-01-01" max="${maxDate}" value="${draftEnd}" onchange="setCustomDateDraft('end',this.value)" oninput="setCustomDateDraft('end',this.value)"></label>
+      </div></div>
+      <div class="custom-date-actions"><button type="button" onclick="cancelDateDraft()" ${busy?'disabled':''}>取消</button><button type="button" class="filter-apply" onclick="confirmDateDraft()" ${busy?'disabled':''}>确认</button></div>
+    </div>
+  </div>`;
+}
 function getDateRangeText(){
-  if(state.periodStart && state.periodEnd){
-    return `${state.periodStart} ~ ${state.periodEnd}`;
+  if(state.periodStart&&state.periodEnd)return `${PERIOD_LABELS[state.selectedPeriod]||'自定义'} · ${state.periodStart} ~ ${state.periodEnd}`;
+  return PERIOD_LABELS[state.selectedPeriod]||'未选择日期';
+}
+function selectDateDraft(period){
+  if(!PERIOD_LABELS[period]||state.dashboardLoading||state.dateFilterSubmitting)return;
+  state.dateDraftPeriod=period;
+  if(period==='custom'){
+    const current=state.periodStart&&state.periodEnd?{start:state.periodStart,end:state.periodEnd}:quickDateRange(state.selectedPeriod);
+    state.customDateDraftStart=state.customDateDraftStart||current.start;state.customDateDraftEnd=state.customDateDraftEnd||current.end;
+  }else{
+    const range=quickDateRange(period);state.customDateDraftStart=range.start;state.customDateDraftEnd=range.end;
   }
-  return PERIOD_LABELS[state.selectedPeriod]||'请选定日期范围';
-}
-
-function toggleCustomDate(){
-  state.customDateOpen=!state.customDateOpen;
   renderApp();
-  if(state.customDateOpen)setTimeout(()=>$('#startDateInput')?.focus(),0);
 }
-
+function toggleCustomDate(){
+  if(state.dashboardLoading||state.dateFilterSubmitting)return;
+  if(state.customDateOpen){cancelDateDraft();return;}
+  state.dateFilterFocusId='dateFilterToggle';state.dateDraftPeriod=state.selectedPeriod;
+  const current=state.periodStart&&state.periodEnd?{start:state.periodStart,end:state.periodEnd}:quickDateRange(state.selectedPeriod);
+  state.customDateDraftStart=current.start;state.customDateDraftEnd=current.end;state.customDateOpen=true;
+  renderApp();setTimeout(()=>$('#startDateInput')?.focus(),0);
+}
 function setCustomDateDraft(which,value){
+  state.dateDraftPeriod='custom';
   if(which==='start')state.customDateDraftStart=value;
   if(which==='end')state.customDateDraftEnd=value;
+  const label=$('#customDateGroup .draft-label');
+  if(label)label.textContent=dateDraftIsDirty()?'待确认':'';
 }
-
-function closeCustomDatePicker(){
-  if(!state.customDateOpen)return;
-  state.customDateOpen=false;
-  renderApp();
+function cancelDateDraft(){
+  state.dateDraftPeriod=state.selectedPeriod;state.customDateDraftStart=state.selectedPeriod==='custom'?state.periodStart:'';state.customDateDraftEnd=state.selectedPeriod==='custom'?state.periodEnd:'';state.customDateOpen=false;
+  renderApp();focusDateTrigger();
 }
-
-async function setPeriod(p){
-  if(state.refreshing||state.roiLoading||state.roiImporting)return;
-  const previous={selectedPeriod:state.selectedPeriod,periodStart:state.periodStart,periodEnd:state.periodEnd};
-  state.selectedPeriod=p;
-  state.customDateOpen=false;
-  state.drillFilter=null;
-  const loaded=await loadDailyData(p);
-  if(loaded===false)Object.assign(state,previous);
-  renderApp();
-  updateFooter();
+function closeCustomDatePicker(){if(state.customDateOpen)cancelDateDraft();}
+function validateDateRange(start,end){
+  const d1=parseIsoDate(start),d2=parseIsoDate(end),{maxDate}=dateFilterBounds();
+  if(!d1||!d2)return {error:'请选择有效的开始日期和结束日期。'};
+  if(d2<d1)return {error:'结束日期不能早于开始日期。'};
+  if(d1>maxDate||d2>maxDate)return {error:`日期不能晚于最新数据日期（${isoDate(maxDate)}）。`};
+  return {start,end,days:Math.floor((d2-d1)/86400000)+1};
 }
-
-async function applyCustomDate(){
-  if(state.refreshing||state.roiLoading||state.roiImporting)return;
-  const s=$('#startDateInput'),e=$('#endDateInput');
-  const start=s?.value||state.customDateDraftStart,end=e?.value||state.customDateDraftEnd;
-  const validDate=value=>{
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return null;
-    const [year,month,day]=value.split('-').map(Number),date=new Date(Date.UTC(year,month-1,day));
-    return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:null;
-  };
-  const d1=validDate(start),d2=validDate(end);
-  if(!d1||!d2){showFeedback('请选择有效的开始日期和结束日期。','error');return;}
-  if(d2<d1){showFeedback('结束日期不能早于开始日期。','error');return;}
-  const previous={selectedPeriod:state.selectedPeriod,periodStart:state.periodStart,periodEnd:state.periodEnd};
-  const dayDiff=Math.floor((d2-d1)/86400000)+1;
-  const loaded=await loadDashboard(dayDiff,start,end);
-  if(loaded===false){Object.assign(state,previous);state.customDateOpen=true;renderApp();return;}
-  state.selectedPeriod='custom';
-  state.periodStart=start;state.periodEnd=end;
-  state.customDateDraftStart=start;state.customDateDraftEnd=end;
-  state.customDateOpen=false;state.drillFilter=null;
-  renderApp();
-  showFeedback(`已应用 ${start} 至 ${end} 的数据。`,'success');
+async function confirmDateDraft(){
+  if(state.refreshing||state.roiLoading||state.roiImporting||state.dashboardLoading||state.dateFilterSubmitting){showFeedback('数据正在加载，请稍候再试。','info');return false;}
+  const period=state.dateDraftPeriod||state.selectedPeriod;
+  const range=period==='custom'?validateDateRange(state.customDateDraftStart,state.customDateDraftEnd):quickDateRange(period);
+  if(range.error){showFeedback(range.error,'error');return false;}
+  const previous=appliedDateSnapshot();state.dateFilterSubmitting=true;
+  try{
+    const loaded=await loadDashboard(range.days,range.start,range.end);
+    if(loaded===false){Object.assign(state,previous);return false;}
+    state.selectedPeriod=period;state.periodStart=range.start;state.periodEnd=range.end;state.dateDraftPeriod=period;
+    state.customDateDraftStart=period==='custom'?range.start:'';state.customDateDraftEnd=period==='custom'?range.end:'';state.customDateOpen=false;state.drillFilter=null;
+    renderApp();showFeedback(`已应用 ${period==='custom'?`${range.start} 至 ${range.end}`:PERIOD_LABELS[period]}。`,'success');return true;
+  }catch(err){Object.assign(state,previous);showFeedback(`日期筛选失败：${err.message}`,'error');return false;}
+  finally{state.dateFilterSubmitting=false;renderApp();}
 }
+// Keep legacy inline handlers/API names working for embedded hosts.
+function setPeriod(period){selectDateDraft(period);}
+function applyCustomDate(){return confirmDateDraft();}
 
 // ─── B. Today Overview ────────────────────────────────────────────────────────
 function renderTodayOverview(){
@@ -1009,18 +1096,17 @@ function initCharts(){
 }
 
 // ─── Data Loading ─────────────────────────────────────────────────────────────
-async function loadDailyData(period){
-  const days=(period==='today'||period==='yesterday')?1:(parseInt(period)||7);
-  if(state.latestAvailableDate){
-    const latest=new Date(`${state.latestAvailableDate}T00:00:00`);
-    const end=new Date(latest);end.setDate(end.getDate()-(period==='yesterday'?1:0));
-    const start=new Date(end);start.setDate(start.getDate()-days+1);
-    const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    await loadDashboard(days,iso(start),iso(end));
-  }else{
-    state.periodStart='';state.periodEnd='';
-    await loadDashboard(days);
+async function loadDailyData(period,startDate='',endDate=''){
+  // Let the first request use the server's latest available data date. Once
+  // that date is known, every subsequent quick range is sent explicitly.
+  if(!startDate&&!endDate&&!state.latestAvailableDate&&period!=='custom'){
+    const initialDays=(period==='today'||period==='yesterday')?1:(parseInt(period,10)||7);
+    return loadDashboard(initialDays);
   }
+  const range=startDate&&endDate?{start:startDate,end:endDate,days:Math.floor((parseIsoDate(endDate)-parseIsoDate(startDate))/86400000)+1}:period==='custom'
+    ?validateDateRange(state.periodStart,state.periodEnd):quickDateRange(period);
+  if(range.error){showFeedback(range.error,'error');return false;}
+  return loadDashboard(range.days,range.start,range.end);
 }
 
 let dashboardRequestId=0;
@@ -1209,10 +1295,10 @@ function bindCustomDateDismissHandlers(){
   window.__cpsDateDismissBound=true;
   const isDateControlTarget=target=>{
     const el=target&&target.nodeType===1?target:null;
-    return !!(el&&(el.closest('#customDateGroup')||el.closest('[aria-controls="customDateGroup"]')));
+    return !!(el&&el.closest('#filterBanner'));
   };
   const dismissOutside=event=>{
-    if(state.customDateOpen&&!isDateControlTarget(event.target))closeCustomDatePicker();
+    if(state.customDateOpen&&!isDateControlTarget(event.target))cancelDateDraft();
   };
   const dismissEscape=event=>{
     if(state.customDateOpen&&event.key==='Escape'){
