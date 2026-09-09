@@ -37,7 +37,10 @@ export async function GET(request: Request) {
     .flatMap((value) => value.split(","))
     .map((value) => value.trim())
     .filter((value) => value && value !== "all"))];
-  const model = url.searchParams.get("model") || "all";
+  const modelFilters = [...new Set(url.searchParams.getAll("model")
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value && value !== "all"))];
   if (channel !== "all" && !isChannel(channel))
     return NextResponse.json({ error: "无效渠道" }, { status: 400 });
 
@@ -53,7 +56,9 @@ export async function GET(request: Request) {
   if (talentFilters.length) query = query.in("talent_name_raw", talentFilters);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const all = ((data || []) as OrderRow[]).filter((row) => model === "all" || seriesOf(row.model_name || "型号未匹配") === model);
+  const all = ((data || []) as OrderRow[]).filter((row) =>
+    !modelFilters.length || modelFilters.includes(seriesOf(row.model_name || "型号未匹配")),
+  );
 
   const talentMap = new Map<string, { gmv: number; gsv: number; orders: Set<string>; qty: number }>();
   const modelMap = new Map<string, { gmv: number; gsv: number; qty: number; talents: Set<string>; orders: Set<string> }>();

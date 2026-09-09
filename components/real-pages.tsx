@@ -150,7 +150,7 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const requestIdRef = useRef(0);
   const optionsRequestRef = useRef<AbortController | null>(null);
   const [talent, setTalent] = useState<string[]>(["all"]);
-  const [model, setModel] = useState("all");
+  const [model, setModel] = useState<string[]>(["all"]);
   const [productView, setProductView] = useState<"model" | "series">("model");
   const [expandedTalent, setExpandedTalent] = useState("");
   const [expandedTalentSeries, setExpandedTalentSeries] = useState("");
@@ -210,9 +210,11 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     };
   }, [showCustomDates]);
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ start, end, channel, category, model });
+    const params = new URLSearchParams({ start, end, channel, category });
     if (!talent.length || talent.includes("all")) params.set("talent", "all");
     else talent.forEach((name) => params.append("talent", name));
+    if (!model.length || model.includes("all")) params.set("model", "all");
+    else model.forEach((name) => params.append("model", name));
     const url = `/api/dashboard?${params.toString()}`;
     if (requestRef.current?.key === url) return;
     requestRef.current?.controller.abort();
@@ -236,9 +238,11 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     }
   }, [start, end, channel, category, talent, model]);
   const downloadFiltered = () => {
-    const params = new URLSearchParams({ start, end, channel, category, model });
+    const params = new URLSearchParams({ start, end, channel, category });
     if (!talent.length || talent.includes("all")) params.set("talent", "all");
     else talent.forEach((name) => params.append("talent", name));
+    if (!model.length || model.includes("all")) params.set("model", "all");
+    else model.forEach((name) => params.append("model", name));
     window.location.assign(`/api/dashboard-export?${params.toString()}`);
   };
   useEffect(() => {
@@ -315,7 +319,7 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
           </div>
           {loadError && <span className="date-range-error" role="alert">{loadError}</span>}
            <BusinessSelect multiple searchable value={talent} onChange={(value) => setTalent(Array.isArray(value) ? (value.length ? value : ["all"]) : [value])} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
-           <BusinessSelect searchable value={model} onChange={(value) => setModel(Array.isArray(value) ? (value[0] || "all") : value)} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
+           <BusinessSelect multiple searchable value={model} onChange={(value) => setModel(Array.isArray(value) ? (value.length ? value : ["all"]) : [value])} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
           <button type="button" onClick={() => void load()} disabled={loading} aria-busy={loading}>
             <RefreshCw size={14} />
             刷新

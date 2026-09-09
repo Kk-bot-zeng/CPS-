@@ -212,7 +212,7 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
 /* Overview date controls: quick ranges are always visible and custom dates stay in a separate popover. */
 .real-actions .date-range-bar{
   display:grid!important;
-  grid-template-columns:repeat(6,minmax(0,1fr)) minmax(118px,1.35fr);
+  grid-template-columns:repeat(7,minmax(0,1fr));
   align-items:stretch;
   gap:8px;
   width:100%;
@@ -324,14 +324,23 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
   }
   .real-actions .date-range-bar::-webkit-scrollbar{height:0}
   .real-actions .date-range-bar>.date-preset{flex:0 0 78px;width:78px}
-  .real-actions .date-range-bar>.custom-date-anchor{flex:0 0 138px;width:138px}
-  .real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{width:138px}
+  .real-actions .date-range-bar>.custom-date-anchor{flex:0 0 78px;width:78px}
+  .real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{width:78px}
 }
 @media(max-width:420px){
   .real-actions .date-range-bar>.date-preset{flex-basis:74px;width:74px}
-  .real-actions .date-range-bar>.custom-date-anchor{flex-basis:132px;width:132px}
-  .real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{width:132px}
+  .real-actions .date-range-bar>.custom-date-anchor{flex-basis:74px;width:74px}
+  .real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{width:74px}
 }
+
+/* Keep all seven date choices visually equal; the applied range is shown in the blue summary band below. */
+.real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{justify-content:center;gap:5px}
+.real-actions .date-range-bar .custom-date-trigger .date-trigger-copy{flex:0 1 auto;align-items:center}
+.real-actions .date-range-bar .custom-date-trigger .date-trigger-copy small{display:none}
+.real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger>svg:last-child{display:none}
+.real-actions>.business-select{min-width:0}
+.real-actions>.business-select .business-select-trigger>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.real-actions>.business-select .business-select-menu{width:max(100%,220px);max-width:min(320px,calc(100vw - 24px))}
 
 /* Selected period hero: keep status, applied period and totals as three distinct regions. */
 .command-brief{
