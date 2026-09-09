@@ -1,7 +1,6 @@
 "use client";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
-  CalendarDays,
   ChevronDown,
   Download,
   Edit3,
@@ -300,11 +299,7 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
             <button type="button" className={`date-preset ${activePreset === "thisMonth" ? "active" : ""}`} aria-pressed={activePreset === "thisMonth"} onClick={() => applyPreset("thisMonth")}>本月</button>
             <button type="button" className={`date-preset ${activePreset === "lastMonth" ? "active" : ""}`} aria-pressed={activePreset === "lastMonth"} onClick={() => applyPreset("lastMonth")}>上月</button>
             <div ref={dateAnchorRef} className="custom-date-anchor">
-              <button ref={dateTriggerRef} type="button" className={`date-range-trigger custom-date-trigger ${activePreset === "custom" ? "active" : ""}`} onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover" aria-label={`自定义时间范围：${dateRangeSummary(start, end)}，共${inclusiveDays(start, end)}天`}>
-                <CalendarDays size={15}/>
-                <span className="date-trigger-copy"><b>自定义</b><small>{dateRangeSummary(start, end)} · {inclusiveDays(start, end)}天</small></span>
-                <ChevronDown size={14} aria-hidden="true" />
-              </button>
+              <button ref={dateTriggerRef} type="button" className={`date-preset custom-date-trigger ${activePreset === "custom" ? "active" : ""}`} onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover" aria-label={`自定义时间范围：${dateRangeSummary(start, end)}，共${inclusiveDays(start, end)}天`}>自定义</button>
               {showCustomDates && <div id="custom-date-popover" className="custom-date-popover" role="dialog" aria-modal="false" aria-labelledby="custom-date-title">
                 <div id="custom-date-title" className="custom-date-title"><b>自定义时间</b><span>{dateRangeSummary(draftStart, draftEnd)} · 共 {inclusiveDays(draftStart, draftEnd)} 天</span></div>
                 <div className="date-filter-main">

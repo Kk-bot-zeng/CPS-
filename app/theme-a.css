@@ -227,11 +227,13 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
   overflow:visible;
 }
 .real-actions .date-range-bar>.date-preset,
-.real-actions .date-range-bar>.custom-date-anchor{
+.real-actions .date-range-bar>.custom-date-anchor,
+.real-actions .date-range-bar>.custom-date-anchor>.date-preset{
   min-width:0;
   width:100%;
 }
-.real-actions .date-range-bar>.date-preset{
+.real-actions .date-range-bar>.date-preset,
+.real-actions .date-range-bar>.custom-date-anchor>.date-preset{
   display:flex;
   align-items:center;
   justify-content:center;
@@ -249,14 +251,17 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
   transition:border-color .14s ease,background .14s ease,color .14s ease,box-shadow .14s ease;
 }
 .real-actions .date-range-bar>.date-preset:hover,
-.real-actions .date-range-bar>.date-preset:focus-visible{
+.real-actions .date-range-bar>.date-preset:focus-visible,
+.real-actions .date-range-bar>.custom-date-anchor>.date-preset:hover,
+.real-actions .date-range-bar>.custom-date-anchor>.date-preset:focus-visible{
   border-color:#8fb2e8!important;
   background:#f6f9ff!important;
   color:#185ad0!important;
   outline:0;
   box-shadow:0 0 0 3px rgba(42,112,219,.08)!important;
 }
-.real-actions .date-range-bar>.date-preset.active{
+.real-actions .date-range-bar>.date-preset.active,
+.real-actions .date-range-bar>.custom-date-anchor>.date-preset.active{
   border-color:#1762df!important;
   background:#eaf1ff!important;
   color:#1458c6!important;
@@ -333,14 +338,18 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
   .real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{width:74px}
 }
 
-/* Keep all seven date choices visually equal; the applied range is shown in the blue summary band below. */
-.real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger{justify-content:center;gap:5px}
-.real-actions .date-range-bar .custom-date-trigger .date-trigger-copy{flex:0 1 auto;align-items:center}
-.real-actions .date-range-bar .custom-date-trigger .date-trigger-copy small{display:none}
-.real-actions .date-range-bar>.custom-date-anchor>.date-range-trigger>svg:last-child{display:none}
+/* Keep all seven date choices identical; the applied range is shown in the blue summary band below. */
+.real-actions .date-range-bar>.custom-date-anchor>.date-preset{width:100%;height:44px!important;min-width:0}
 .real-actions>.business-select{min-width:0}
 .real-actions>.business-select .business-select-trigger>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .real-actions>.business-select .business-select-menu{width:max(100%,220px);max-width:min(320px,calc(100vw - 24px))}
+
+/* Menus opened in the global header must stay above the overview filters below. */
+.topbar{position:relative;z-index:240;overflow:visible}
+.top-actions{position:relative;z-index:250;overflow:visible}
+.top-actions .business-select.open{z-index:270}
+.top-actions .business-select-menu{z-index:280}
+.content{position:relative;z-index:1}
 
 /* Selected period hero: keep status, applied period and totals as three distinct regions. */
 .command-brief{
@@ -372,7 +381,7 @@ html,body{background:var(--canvas);font-family:"Segoe UI","Microsoft YaHei","Pin
 .command-brief-period strong{margin-top:8px;color:#fff;font-size:clamp(20px,2.2vw,31px);font-weight:800;line-height:1.2;letter-spacing:.01em;white-space:nowrap}
 .command-brief-stats{position:relative;z-index:2;display:grid;grid-template-columns:repeat(2,minmax(130px,1fr));min-width:330px}
 .command-brief-stats .command-brief-stat{min-width:0}
-@media(max-width:900px){
+@media(max-width:1150px){
   .command-brief{grid-template-columns:minmax(0,1fr) minmax(240px,1.2fr);row-gap:16px}
   .command-brief-copy{grid-column:1}
   .command-brief-period{grid-column:2;grid-row:1;min-height:64px;padding-inline:16px}
