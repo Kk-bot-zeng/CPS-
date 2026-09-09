@@ -3,7 +3,16 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type BusinessOption = { value: string; label: string };
-export default function BusinessSelect({ value, options, onChange, label, className = "", searchable = false }: { value: string; options: BusinessOption[]; onChange: (value: string) => void; label?: string; className?: string; searchable?: boolean }) {
+type BusinessSelectProps = {
+  value: string | string[];
+  options: BusinessOption[];
+  onChange: (value: string | string[]) => void;
+  label?: string;
+  className?: string;
+  searchable?: boolean;
+  multiple?: boolean;
+};
+export default function BusinessSelect({ value, options, onChange, label, className = "", searchable = false, multiple = false }: BusinessSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -12,11 +21,31 @@ export default function BusinessSelect({ value, options, onChange, label, classN
   const searchInput = useRef<HTMLInputElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const menuId = useId();
-  const current = options.find((x) => x.value === value) || options[0];
+  const selectedValues = Array.isArray(value) ? value : [value];
+  const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues]);
+  // Keep selected names available when a date/channel refresh returns no sales
+  // for one of them; users can still see and uncheck every active selection.
+  const selectOptions = useMemo(() => {
+    if (!multiple) return options;
+    const byValue = new Map(options.map((option) => [option.value, option]));
+    selectedValues.filter((selected) => selected !== "all").forEach((selected) => {
+      if (!byValue.has(selected)) byValue.set(selected, { value: selected, label: selected });
+    });
+    return [...byValue.values()];
+  }, [multiple, options, selectedValues]);
+  const allOption = selectOptions.find((option) => option.value === "all");
+  const current = selectOptions.find((x) => x.value === value) || selectOptions[0];
+  const displayLabel = multiple
+    ? selectedValues.includes("all") || selectedValues.length === 0
+      ? allOption?.label || "全部"
+      : selectedValues.length === 1
+        ? selectOptions.find((option) => option.value === selectedValues[0])?.label || selectedValues[0]
+        : `已选 ${selectedValues.length} 项`
+    : current?.label;
   const visibleOptions = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase();
-    return keyword ? options.filter((option) => option.label.toLocaleLowerCase().includes(keyword)) : options;
-  }, [options, query]);
+    return keyword ? selectOptions.filter((option) => option.label.toLocaleLowerCase().includes(keyword)) : selectOptions;
+  }, [selectOptions, query]);
 
   const closeMenu = (restoreFocus = false) => {
     setOpen(false);
@@ -26,15 +55,27 @@ export default function BusinessSelect({ value, options, onChange, label, classN
   };
 
   const selectOption = (option: BusinessOption) => {
+    if (multiple) {
+      if (option.value === "all") {
+        onChange(allOption ? [allOption.value] : []);
+      } else {
+        const withoutAll = selectedValues.filter((selected) => selected !== "all");
+        const next = withoutAll.includes(option.value)
+          ? withoutAll.filter((selected) => selected !== option.value)
+          : [...withoutAll, option.value];
+        onChange(next.length ? next : allOption ? [allOption.value] : []);
+      }
+      return;
+    }
     onChange(option.value);
     closeMenu(true);
   };
 
   useEffect(() => {
     if (!open) return;
-    setHighlightedIndex(Math.max(0, visibleOptions.findIndex((option) => option.value === value)));
+    setHighlightedIndex(Math.max(0, visibleOptions.findIndex((option) => selectedSet.has(option.value))));
     if (searchable) window.requestAnimationFrame(() => searchInput.current?.focus());
-  }, [open, searchable, value, visibleOptions]);
+  }, [open, searchable, selectedSet, visibleOptions]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,13 +108,13 @@ export default function BusinessSelect({ value, options, onChange, label, classN
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, searchable, value, visibleOptions, highlightedIndex]);
+  }, [open, searchable, selectedValues, visibleOptions, highlightedIndex, multiple]);
 
   useEffect(() => {
     if (highlightedIndex >= 0) optionRefs.current[highlightedIndex]?.scrollIntoView({ block: "nearest" });
   }, [highlightedIndex]);
 
-  return <div ref={root} className={`business-select ${open ? "open" : ""} ${className}`}>
+  return <div ref={root} className={`business-select ${open ? "open" : ""} ${multiple ? "multiple" : ""} ${className}`}>
     {label && <span className="business-select-label">{label}</span>}
     <button
       ref={trigger}
@@ -94,12 +135,13 @@ export default function BusinessSelect({ value, options, onChange, label, classN
       aria-controls={menuId}
       aria-label={label ? undefined : "选择业务"}
     >
-      <span>{current?.label}</span><ChevronDown size={15}/>
+      <span>{displayLabel}</span><ChevronDown size={15}/>
     </button>
-    {open && <div id={menuId} className="business-select-menu" role="listbox" aria-label={label || "业务选项"}>
+    {open && <div id={menuId} className="business-select-menu" role="listbox" aria-multiselectable={multiple || undefined} aria-label={label || "业务选项"}>
       {searchable && <div className="business-select-search"><input ref={searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入关键词搜索" aria-label="搜索选项" /></div>}
-      {visibleOptions.map((option, index) => <button ref={(element) => { optionRefs.current[index] = element; }} type="button" role="option" aria-selected={option.value === value} key={option.value} className={`${option.value === value ? "selected" : ""} ${highlightedIndex === index ? "highlighted" : ""}`} style={highlightedIndex === index && option.value !== value ? { backgroundColor: "#edf4ff", color: "#1554bf" } : undefined} onClick={() => selectOption(option)}><span>{option.label}</span>{option.value === value && <Check size={14}/>}</button>)}
+      {visibleOptions.map((option, index) => <button ref={(element) => { optionRefs.current[index] = element; }} type="button" role="option" aria-selected={selectedSet.has(option.value)} key={option.value} className={`${selectedSet.has(option.value) ? "selected" : ""} ${highlightedIndex === index ? "highlighted" : ""}`} style={highlightedIndex === index && !selectedSet.has(option.value) ? { backgroundColor: "#edf4ff", color: "#1554bf" } : undefined} onClick={() => selectOption(option)}><span>{option.label}</span>{selectedSet.has(option.value) && <Check size={14}/>}</button>)}
       {!visibleOptions.length && <div className="business-select-empty" role="status">没有匹配项</div>}
+      {multiple && !selectedValues.includes("all") && selectedValues.length > 0 && <div className="business-select-footer"><button type="button" onClick={() => onChange(allOption ? [allOption.value] : [])}>清空选择</button></div>}
     </div>}
   </div>;
 }

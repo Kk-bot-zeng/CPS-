@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   AlertCircle,
@@ -493,6 +493,8 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const productPickerRef = useRef<HTMLDivElement | null>(null);
+  const productTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const productMenuId = useId();
   const [result, setResult] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -503,18 +505,23 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const channelLabel = channel === "all" ? "全部渠道" : channelName(channel);
   const categoryLabel = categoryName(category);
   const length = form.length === "custom" ? form.customLength : form.length;
+  const closeProductPicker = (restoreFocus = false) => {
+    setPickerOpen(false);
+    setProductSearch("");
+    if (restoreFocus) window.requestAnimationFrame(() => productTriggerRef.current?.focus());
+  };
 
   useEffect(() => {
     if (!pickerOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       if (productPickerRef.current && !productPickerRef.current.contains(event.target as Node)) {
-        setPickerOpen(false);
+         closeProductPicker(false);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        event.preventDefault();
-        setPickerOpen(false);
+         event.preventDefault();
+         closeProductPicker(true);
       }
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
@@ -583,9 +590,9 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
         </div>
         <div className="cw-product-select-wrap" ref={productPickerRef}>
           <span className="cw-field-label">选择产品型号 <i>*</i></span>
-          <button className="cw-product-trigger" onClick={() => setPickerOpen((open) => !open)} aria-expanded={pickerOpen}><span>{selectedProducts.length ? `已选择 ${selectedProducts.length} 个型号` : "搜索并选择一个或多个型号"}</span><ChevronDown size={15} /></button>
-          {selectedProducts.length > 0 && <div className="cw-selected-chips">{selectedProducts.map((product) => <button key={product.id} onClick={() => toggleProduct(product.id)}>{product.model}<X size={12} /></button>)}</div>}
-          {pickerOpen && <div className="cw-product-menu"><div className="cw-product-search"><Search size={14} /><input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="搜索型号、推广名、系列或SKU" /></div><div className="cw-product-options">{filteredProducts.length ? filteredProducts.map((product) => <button key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""} onClick={() => toggleProduct(product.id)}><span className="cw-check-box">{selectedIds.includes(product.id) && <Check size={12} />}</span><span><b>{product.promotionName || "未填写推广名"}</b><small>型号：{product.model}</small><small>{product.series || "未分系列"} · {product.sku || "无SKU"}</small></span></button>) : <div className="cw-product-empty">没有匹配的启用型号，请先在产品资料库维护</div>}</div><div className="cw-product-menu-footer"><span>可多选，生成时会自动引用对应资料版本</span><button onClick={() => setPickerOpen(false)}>完成选择</button></div></div>}
+           <button ref={productTriggerRef} type="button" className="cw-product-trigger" onClick={() => pickerOpen ? closeProductPicker(true) : setPickerOpen(true)} aria-expanded={pickerOpen} aria-haspopup="listbox" aria-controls={productMenuId}><span>{selectedProducts.length ? `已选择 ${selectedProducts.length} 个型号` : "搜索并选择一个或多个型号"}</span><ChevronDown size={15} aria-hidden="true" /></button>
+           {selectedProducts.length > 0 && <div className="cw-selected-chips">{selectedProducts.map((product) => <button type="button" key={product.id} onClick={() => toggleProduct(product.id)} aria-label={`移除${product.model}`}>{product.model}<X size={12} aria-hidden="true" /></button>)}</div>}
+           {pickerOpen && <div id={productMenuId} className="cw-product-menu" role="listbox" aria-label="选择产品型号"><div className="cw-product-search"><Search size={14} aria-hidden="true" /><input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="搜索型号、推广名、系列或SKU" aria-label="搜索产品型号" /></div><div className="cw-product-options">{filteredProducts.length ? filteredProducts.map((product) => <button type="button" role="option" aria-selected={selectedIds.includes(product.id)} key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""} onClick={() => toggleProduct(product.id)}><span className="cw-check-box" aria-hidden="true">{selectedIds.includes(product.id) && <Check size={12} />}</span><span><b>{product.promotionName || "未填写推广名"}</b><small>型号：{product.model}</small><small>{product.series || "未分系列"} · {product.sku || "无SKU"}</small></span></button>) : <div className="cw-product-empty" role="status">没有匹配的启用型号，请先在产品资料库维护</div>}</div><div className="cw-product-menu-footer"><span>可多选，生成时会自动引用对应资料版本</span><button type="button" onClick={() => closeProductPicker(true)}>完成选择</button></div></div>}
         </div>
         <div className="cw-form-grid">
           <label className="cw-field cw-wide"><span>活动政策与价格依据</span><textarea value={form.policy} onChange={(event) => setForm({ ...form, policy: event.target.value })} placeholder={selectedPolicyText ? "已自动带入当前有效政策，可补充本次要求" : "填写优惠、佣金、补贴及有效期；不确定可留空"} /></label>

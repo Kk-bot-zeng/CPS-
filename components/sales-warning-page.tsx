@@ -45,9 +45,25 @@ export default function SalesWarningPage({channel,onRead}:{channel:ChannelFilter
    if(!selected)return;
    selectedPreviousFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
    window.requestAnimationFrame(()=>selectedCloseRef.current?.focus());
-   const closeOnEscape=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();setSelected(null);}};
+   const previousBodyOverflow=document.body.style.overflow;
+   document.body.style.overflow="hidden";
+   const closeOnEscape=(event:KeyboardEvent)=>{
+     if(event.key==="Escape"){
+       event.preventDefault();
+       setSelected(null);
+       return;
+     }
+     if(event.key!=="Tab")return;
+     const modal=document.querySelector<HTMLElement>(".warning-modal");
+     if(!modal)return;
+     const focusable=Array.from(modal.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[href],[tabindex]:not([tabindex="-1"])'));
+     if(!focusable.length)return;
+     const first=focusable[0],last=focusable[focusable.length-1];
+     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+   };
    document.addEventListener("keydown",closeOnEscape);
-   return()=>{document.removeEventListener("keydown",closeOnEscape);window.requestAnimationFrame(()=>selectedPreviousFocus.current?.focus());};
+   return()=>{document.removeEventListener("keydown",closeOnEscape);document.body.style.overflow=previousBodyOverflow;window.requestAnimationFrame(()=>selectedPreviousFocus.current?.focus());};
  },[selected]);
  const rows=useMemo(()=>data?.rows.filter(x=>(level==="all"||x.severity===level)&&(!q.trim()||`${x.name}${channelName(x.channel)}`.toLowerCase().includes(q.trim().toLowerCase())))||[],[data,q,level]);
  const counts=(kind:string)=>data?.rows.filter(x=>kind==="all"||x.severity===kind).length||0;

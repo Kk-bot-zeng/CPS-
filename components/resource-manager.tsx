@@ -61,6 +61,8 @@ function useModalBehavior(close: () => void) {
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const focusModal = () => closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -88,6 +90,7 @@ function useModalBehavior(close: () => void) {
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousBodyOverflow;
       previous?.focus?.();
     };
   }, []);

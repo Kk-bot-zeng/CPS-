@@ -31,7 +31,12 @@ export async function GET(request: Request) {
   const end = url.searchParams.get("end");
   const channel = url.searchParams.get("channel") || "all";
   const category = url.searchParams.get("category") || "tv";
-  const talent = url.searchParams.get("talent") || "all";
+  // Multi-select clients send repeated `talent` parameters. Keep accepting the
+  // previous comma-delimited form so bookmarked/exported URLs remain valid.
+  const talentFilters = [...new Set(url.searchParams.getAll("talent")
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value && value !== "all"))];
   const model = url.searchParams.get("model") || "all";
   if (channel !== "all" && !isChannel(channel))
     return NextResponse.json({ error: "无效渠道" }, { status: 400 });
@@ -45,7 +50,7 @@ export async function GET(request: Request) {
   if (start) query = query.gte("paid_at", `${start}T00:00:00`);
   if (end) query = query.lte("paid_at", `${end}T23:59:59`);
   if (channel !== "all") query = query.eq("platform", channel);
-  if (talent !== "all") query = query.eq("talent_name_raw", talent);
+  if (talentFilters.length) query = query.in("talent_name_raw", talentFilters);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const all = ((data || []) as OrderRow[]).filter((row) => model === "all" || seriesOf(row.model_name || "型号未匹配") === model);

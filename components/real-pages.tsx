@@ -149,7 +149,7 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const requestRef = useRef<{ key: string; controller: AbortController; id: number } | null>(null);
   const requestIdRef = useRef(0);
   const optionsRequestRef = useRef<AbortController | null>(null);
-  const [talent, setTalent] = useState("all");
+  const [talent, setTalent] = useState<string[]>(["all"]);
   const [model, setModel] = useState("all");
   const [productView, setProductView] = useState<"model" | "series">("model");
   const [expandedTalent, setExpandedTalent] = useState("");
@@ -210,7 +210,10 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     };
   }, [showCustomDates]);
   const load = useCallback(async () => {
-    const url = `/api/dashboard?start=${start}&end=${end}&channel=${channel}&category=${category}&talent=${encodeURIComponent(talent)}&model=${encodeURIComponent(model)}`;
+    const params = new URLSearchParams({ start, end, channel, category, model });
+    if (!talent.length || talent.includes("all")) params.set("talent", "all");
+    else talent.forEach((name) => params.append("talent", name));
+    const url = `/api/dashboard?${params.toString()}`;
     if (requestRef.current?.key === url) return;
     requestRef.current?.controller.abort();
     const controller = new AbortController();
@@ -233,7 +236,10 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     }
   }, [start, end, channel, category, talent, model]);
   const downloadFiltered = () => {
-    window.location.assign(`/api/dashboard-export?${new URLSearchParams({ start, end, channel, category, talent, model }).toString()}`);
+    const params = new URLSearchParams({ start, end, channel, category, model });
+    if (!talent.length || talent.includes("all")) params.set("talent", "all");
+    else talent.forEach((name) => params.append("talent", name));
+    window.location.assign(`/api/dashboard-export?${params.toString()}`);
   };
   useEffect(() => {
     void load();
@@ -257,7 +263,9 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
     requestRef.current?.controller.abort();
     optionsRequestRef.current?.abort();
   }, []);
-  if (loading) return <Loading />;
+  // Keep the current dashboard mounted while a filter request is in flight.
+  // This prevents a multi-select menu from closing after every checkbox click.
+  if (loading && !summary) return <Loading />;
   if (!summary) return <Empty text="暂时无法读取销售数据" />;
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
   const today = summary.daily.at(-1);
@@ -306,8 +314,8 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
             </div>
           </div>
           {loadError && <span className="date-range-error" role="alert">{loadError}</span>}
-           <BusinessSelect searchable value={talent} onChange={setTalent} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
-           <BusinessSelect searchable value={model} onChange={setModel} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
+           <BusinessSelect multiple searchable value={talent} onChange={(value) => setTalent(Array.isArray(value) ? (value.length ? value : ["all"]) : [value])} options={[{ value:"all", label:"全部达人/团长" }, ...talentOptions]} />
+           <BusinessSelect searchable value={model} onChange={(value) => setModel(Array.isArray(value) ? (value[0] || "all") : value)} options={[{ value:"all", label:"全部型号" }, ...modelOptions]} />
           <button type="button" onClick={() => void load()} disabled={loading} aria-busy={loading}>
             <RefreshCw size={14} />
             刷新
@@ -1096,15 +1104,33 @@ function Modal({
   useEffect(() => {
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !modalRef.current) return;
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => {
       document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousBodyOverflow;
       window.requestAnimationFrame(() => previousFocus.current?.focus());
     };
   }, []);
