@@ -45,7 +45,11 @@ const PAGE_SIZE = 25;
 async function fetchJson<T>(url: string, init?: RequestInit, fallback = "请求失败"): Promise<T> {
   const response = await fetch(url, init);
   const payload = await response.json().catch(() => null) as any;
-  if (!response.ok) throw new Error(String(payload?.error || payload?.message || fallback));
+  if (!response.ok) {
+    const summary = String(payload?.error || payload?.message || fallback);
+    const details = Array.isArray(payload?.errors) ? payload.errors.filter(Boolean).join("；") : "";
+    throw new Error(details ? `${summary}：${details}` : summary);
+  }
   return payload as T;
 }
 
@@ -255,13 +259,18 @@ export default function ResourceManager({
         raw.map((r) => ({
           type: r["身份(达人/团长)"],
           name: String(r["名称"] || ""),
-          channel: category === "monitor" ? "jd" :
-            ({ 京东: "jd", 抖音: "douyin", 天猫: "tmall" } as any)[
-              String(r["渠道(京东/抖音/天猫)"] || "")
-            ] || r["渠道(京东/抖音/天猫)"],
+          channel: category === "monitor" ? "jd" : channel !== "all" ? channel : (() => {
+            const raw = String(r["渠道(京东/抖音/天猫)"] || "").replace(/[\u200b-\u200d\ufeff]/g, "").trim();
+            const key = raw.toLowerCase().replace(/\s+/g, "");
+            return ({
+              jd: "jd", 京东: "jd", 京东渠道: "jd",
+              douyin: "douyin", dy: "douyin", 抖音: "douyin", 抖音渠道: "douyin",
+              tmall: "tmall", 天猫: "tmall", 天猫渠道: "tmall",
+            } as Record<string, string>)[key] || raw;
+          })(),
           account: String(r["平台账号"] || ""),
-          matchId: String(r["匹配ID/联盟ID"] || ""),
-          leader: String(r["所属团长"] || ""),
+          matchId: String(r["匹配ID/联盟ID"] || "").trim().replace(/^(请填写.*|[-—–]|无|暂无)$/i, ""),
+          leader: String(r["所属团长"] || "").trim().replace(/^[-—–]$/, ""),
           contact: String(r["联系人"] || ""),
           phone: String(r["手机号"] || ""),
           wechat: String(r["微信"] || ""),
@@ -288,7 +297,11 @@ export default function ResourceManager({
       const j = await fetchJson<any>("/api/resources/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: batch, product_category: category }),
+        body: JSON.stringify({
+          rows: batch,
+          product_category: category,
+          selected_channel: category === "monitor" ? "jd" : channel,
+        }),
       }, "批量导入失败");
       setMessage(`成功导入${j.total}条：${j.leaders}位团长、${j.talents}位达人`);
       setBatch(null);
