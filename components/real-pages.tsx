@@ -106,6 +106,10 @@ const dateRangeSummary = (start: string, end: string) => {
   if (!end) return `${dateToChinese(start)}至未选择`;
   return start === end ? dateToChinese(start) : `${dateToChinese(start)}至${dateToChinese(end)}`;
 };
+const dateRangeBannerLabel = (start: string, end: string) => {
+  if (!start || !end) return "未选择日期";
+  return start === end ? dateToChinese(start) : `${dateToChinese(start)} — ${dateToChinese(end)}`;
+};
 const inclusiveDays = (start: string, end: string) => {
   if (!start || !end) return 0;
   const startTime = new Date(`${start}T00:00:00`).getTime();
@@ -258,6 +262,7 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   const rate = summary.gmv ? (summary.gsv / summary.gmv) * 100 : 0;
   const today = summary.daily.at(-1);
   const overviewLabel = start === end && start === relativeDateKey(-1) ? "昨日销售概览" : start === end && start === relativeDateKey(0) ? "今日销售概览" : "所选时段销售概览";
+  const periodLabel = dateRangeBannerLabel(start, end);
   const rankedProducts = productView === "model" ? summary.products : summary.seriesProducts;
   const productTalents = selectedProduct
     ? summary.talentModels.filter((x) => productView === "series" ? seriesOf(x.model) === selectedProduct : x.model === selectedProduct).reduce((map, x) => {
@@ -314,10 +319,16 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
         <div className="command-brief-copy">
           <span className="live-dot">● 实时经营中</span>
           <strong>{overviewLabel}</strong>
-          <small>{today ? `${today.date} · 已同步 ${today.orders.toLocaleString()} 笔订单` : "等待订单数据同步"}</small>
+          <small>{today ? `已同步 ${today.orders.toLocaleString()} 笔订单` : "等待订单数据同步"}</small>
         </div>
-        <div className="command-brief-stat"><span>所选时段销售额</span><b>{money(summary.gmv)}</b></div>
-        <div className="command-brief-stat"><span>所选时段销售台数</span><b>{summary.quantity.toLocaleString()} 台</b></div>
+        <div className="command-brief-period" aria-label={`当前分析周期：${periodLabel}`}>
+          <span>当前分析周期</span>
+          <strong>{periodLabel}</strong>
+        </div>
+        <div className="command-brief-stats">
+          <div className="command-brief-stat"><span>所选时段销售额</span><b>{money(summary.gmv)}</b></div>
+          <div className="command-brief-stat"><span>所选时段销售台数</span><b>{summary.quantity.toLocaleString()} 台</b></div>
+        </div>
       </section>
       <div className={`kpi-grid ${channel === "jd" ? "jd-kpis" : ""}`}>
         <RealKpi
