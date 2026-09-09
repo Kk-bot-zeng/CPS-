@@ -177,6 +177,10 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
   };
   const applyPreset = (preset: Exclude<DatePreset, "custom">) => {
     const next = dateRangeForPreset(preset);
+    // 快捷时间是独立的即时筛选，点击后直接提交并触发数据刷新。
+    setActivePreset(preset);
+    setStart(next.start);
+    setEnd(next.end);
     setDraftPreset(preset);
     setDraftStart(next.start);
     setDraftEnd(next.end);
@@ -272,31 +276,26 @@ export function RealOverview({ channel, category = "tv" }: { channel: ChannelFil
         </div>
         <div className="real-actions">
           <div className="date-range-bar" role="group" aria-label="时间筛选">
+            <button type="button" className={`date-preset ${activePreset === "yesterday" ? "active" : ""}`} aria-pressed={activePreset === "yesterday"} onClick={() => applyPreset("yesterday")}>昨日</button>
+            <button type="button" className={`date-preset ${activePreset === "today" ? "active" : ""}`} aria-pressed={activePreset === "today"} onClick={() => applyPreset("today")}>今日</button>
+            <button type="button" className={`date-preset ${activePreset === "last7" ? "active" : ""}`} aria-pressed={activePreset === "last7"} onClick={() => applyPreset("last7")}>近7天</button>
+            <button type="button" className={`date-preset ${activePreset === "last30" ? "active" : ""}`} aria-pressed={activePreset === "last30"} onClick={() => applyPreset("last30")}>近30天</button>
+            <button type="button" className={`date-preset ${activePreset === "thisMonth" ? "active" : ""}`} aria-pressed={activePreset === "thisMonth"} onClick={() => applyPreset("thisMonth")}>本月</button>
+            <button type="button" className={`date-preset ${activePreset === "lastMonth" ? "active" : ""}`} aria-pressed={activePreset === "lastMonth"} onClick={() => applyPreset("lastMonth")}>上月</button>
             <div ref={dateAnchorRef} className="custom-date-anchor">
-              <button ref={dateTriggerRef} type="button" className="date-range-trigger" onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover" aria-label={`时间范围：${dateRangeSummary(start, end)}，共${inclusiveDays(start, end)}天`}>
+              <button ref={dateTriggerRef} type="button" className={`date-range-trigger custom-date-trigger ${activePreset === "custom" ? "active" : ""}`} onClick={() => showCustomDates ? closeDatePicker(true) : openDatePicker()} aria-expanded={showCustomDates} aria-haspopup="dialog" aria-controls="custom-date-popover" aria-label={`自定义时间范围：${dateRangeSummary(start, end)}，共${inclusiveDays(start, end)}天`}>
                 <CalendarDays size={15}/>
-                <span className="date-trigger-copy"><b>{dateRangeSummary(start, end)}</b><small>共 {inclusiveDays(start, end)} 天</small></span>
+                <span className="date-trigger-copy"><b>自定义</b><small>{dateRangeSummary(start, end)} · {inclusiveDays(start, end)}天</small></span>
                 <ChevronDown size={14} aria-hidden="true" />
               </button>
               {showCustomDates && <div id="custom-date-popover" className="custom-date-popover" role="dialog" aria-modal="false" aria-labelledby="custom-date-title">
-                <div id="custom-date-title" className="custom-date-title"><b>时间范围</b><span>{dateRangeSummary(draftStart, draftEnd)} · 共 {inclusiveDays(draftStart, draftEnd)} 天</span></div>
-                <div className="date-filter-layout">
-                  <div className="date-filter-shortcuts" role="listbox" aria-label="快捷时间范围">
-                    <button type="button" role="option" aria-selected={draftPreset === "yesterday"} className={draftPreset === "yesterday" ? "active" : ""} onClick={() => applyPreset("yesterday")}>昨日</button>
-                    <button type="button" role="option" aria-selected={draftPreset === "today"} className={draftPreset === "today" ? "active" : ""} onClick={() => applyPreset("today")}>今日</button>
-                    <button type="button" role="option" aria-selected={draftPreset === "last7"} className={draftPreset === "last7" ? "active" : ""} onClick={() => applyPreset("last7")}>近7天</button>
-                    <button type="button" role="option" aria-selected={draftPreset === "last30"} className={draftPreset === "last30" ? "active" : ""} onClick={() => applyPreset("last30")}>近30天</button>
-                    <button type="button" role="option" aria-selected={draftPreset === "thisMonth"} className={draftPreset === "thisMonth" ? "active" : ""} onClick={() => applyPreset("thisMonth")}>本月</button>
-                    <button type="button" role="option" aria-selected={draftPreset === "lastMonth"} className={draftPreset === "lastMonth" ? "active" : ""} onClick={() => applyPreset("lastMonth")}>上月</button>
-                    <button type="button" role="option" aria-selected={draftPreset === "custom"} className={draftPreset === "custom" ? "active" : ""} onClick={() => { setDraftPreset("custom"); setDateError(""); }}>自定义</button>
-                  </div>
-                  <div className="date-filter-main">
-                    <div className="custom-date-fields"><label htmlFor="overview-date-start">开始<input id="overview-date-start" ref={dateStartRef} type="date" value={draftStart} max={todayDateKey()} onChange={(e) => { setDraftPreset("custom"); setDraftStart(e.target.value); setDateError(""); }} /></label><span aria-hidden="true">—</span>
-                    <label htmlFor="overview-date-end">结束<input id="overview-date-end" type="date" value={draftEnd} min={draftStart || undefined} max={todayDateKey()} onChange={(e) => { setDraftPreset("custom"); setDraftEnd(e.target.value); setDateError(""); }} /></label></div>
-                    <div className="date-draft-summary" aria-live="polite"><span>已选择</span><b>{dateRangeSummary(draftStart, draftEnd)}</b><small>共 {inclusiveDays(draftStart, draftEnd)} 天</small></div>
-                    {dateError && <p className="custom-date-error" role="alert">{dateError}</p>}
-                    <div className="custom-date-actions"><button type="button" onClick={() => closeDatePicker(true)}>取消</button><button type="button" className="primary" onClick={applyCustomDates}>确定</button></div>
-                  </div>
+                <div id="custom-date-title" className="custom-date-title"><b>自定义时间</b><span>{dateRangeSummary(draftStart, draftEnd)} · 共 {inclusiveDays(draftStart, draftEnd)} 天</span></div>
+                <div className="date-filter-main">
+                  <div className="custom-date-fields"><label htmlFor="overview-date-start">开始<input id="overview-date-start" ref={dateStartRef} type="date" value={draftStart} max={todayDateKey()} onChange={(e) => { setDraftPreset("custom"); setDraftStart(e.target.value); setDateError(""); }} /></label><span aria-hidden="true">—</span>
+                  <label htmlFor="overview-date-end">结束<input id="overview-date-end" type="date" value={draftEnd} min={draftStart || undefined} max={todayDateKey()} onChange={(e) => { setDraftPreset("custom"); setDraftEnd(e.target.value); setDateError(""); }} /></label></div>
+                  <div className="date-draft-summary" aria-live="polite"><span>已选择</span><b>{dateRangeSummary(draftStart, draftEnd)}</b><small>共 {inclusiveDays(draftStart, draftEnd)} 天</small></div>
+                  {dateError && <p className="custom-date-error" role="alert">{dateError}</p>}
+                  <div className="custom-date-actions"><button type="button" onClick={() => closeDatePicker(true)}>取消</button><button type="button" className="primary" onClick={applyCustomDates}>确定</button></div>
                 </div>
               </div>}
             </div>
