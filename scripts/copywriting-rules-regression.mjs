@@ -79,5 +79,11 @@ const inchSeriesDraft = "【文案草稿】\n65英寸鹤7 PRO 26款和98吋鹤7 
 const inchSeriesNamedDraft = replaceModelReferencesInDraft(inchSeriesDraft, selectedSeriesProducts);
 assert.match(inchSeriesNamedDraft, /鹤7 PRO 26款/u, "系列名应覆盖带英寸单位的模型表述");
 assert.doesNotMatch(inchSeriesNamedDraft, /(?:65|98)(?:英寸|吋)鹤7 PRO 26款/u, "系列文案不得保留带单位的尺寸前缀");
+const missingPromotionSeriesDraft = replaceModelReferencesInDraft(
+  "【文案草稿】\n65鹤7 PRO 26款适合整系列推广。\n【待确认事项】\n无",
+  [{ canonicalModel: "65鹤7 PRO 26款", promotionName: null, seriesPublicName: "鹤7 PRO 26款" }],
+);
+assert.match(missingPromotionSeriesDraft, /鹤7 PRO 26款适合整系列推广/u, "推广名为空时仍应使用已核验系列公共名称");
+assert.doesNotMatch(missingPromotionSeriesDraft, /65鹤7 PRO 26款/u, "系列公共名称存在时不得保留标准型号");
 
 console.log("copywriting-rules regression: PASS");

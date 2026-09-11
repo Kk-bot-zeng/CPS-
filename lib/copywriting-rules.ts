@@ -81,7 +81,7 @@ export function replaceModelReferencesInDraft(content: string, products: Grounde
   if (!range) return content;
   let draft = content.slice(range.start, range.end);
   const replacements = products
-    .filter((product) => hasPromotionName(product) && product.canonicalModel.trim() && publicProductName(product) !== product.canonicalModel.trim())
+    .filter((product) => hasPublicProductName(product) && product.canonicalModel.trim() && publicProductName(product) !== product.canonicalModel.trim())
     .sort((a, b) => b.canonicalModel.trim().length - a.canonicalModel.trim().length);
   for (const product of replacements) {
     const model = product.canonicalModel.trim();
