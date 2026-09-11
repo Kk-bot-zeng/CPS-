@@ -10,6 +10,7 @@ export type ProductSearchRecord = {
 };
 
 const PRODUCT_SEARCH_SEPARATOR_RE = /[\s\-_/\\|·•.,，。:：;；+&#@()\[\]【】{}<>《》'"“”‘’~～]+/g;
+const PROMOTION_SIZE_PREFIX_RE = /^\s*\d{2,3}(?:\.\d+)?\s*(?:英寸|寸|吋)?\s*(?!\d)/;
 
 function asText(value: unknown) {
   return String(value ?? "").trim();
@@ -34,6 +35,21 @@ export function splitProductSearchTerms(value: unknown) {
     .split(PRODUCT_SEARCH_SEPARATOR_RE)
     .map((term) => normaliseProductSearch(term))
     .filter(Boolean);
+}
+
+/**
+ * Resolve a safe display/grouping series without guessing from the canonical
+ * model.  A populated database series always wins; otherwise only a leading
+ * 2–3 digit size (optionally followed by an inch unit) is removed from the
+ * promotion name.  Names that cannot yield a non-empty suffix stay ungrouped.
+ */
+export function deriveProductSeries(product: ProductSearchRecord) {
+  const explicit = asText(product.series);
+  if (explicit) return explicit;
+  const promotionName = asText(product.promotionName);
+  if (!promotionName) return "";
+  const derived = promotionName.replace(PROMOTION_SIZE_PREFIX_RE, "").trim();
+  return derived && derived !== promotionName ? derived : "";
 }
 
 /**

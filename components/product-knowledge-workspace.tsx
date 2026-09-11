@@ -31,7 +31,7 @@ import {
 import type { ChannelFilter } from "@/lib/channels";
 import { channelName } from "@/lib/channels";
 import { shouldGenerateSeparately } from "@/lib/copywriting-selection";
-import { normaliseProductSearch, productMatchesSearch } from "@/lib/product-search";
+import { deriveProductSeries, normaliseProductSearch, productMatchesSearch } from "@/lib/product-search";
 
 type ProductCategory = "tv" | "monitor";
 type TabKey = "generator" | "products" | "policies" | "versions" | "history";
@@ -512,7 +512,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const productSeriesOptions = useMemo<ProductSeriesOption[]>(() => {
     const grouped = new Map<string, ProductSeriesOption>();
     products.forEach((product) => {
-      const name = safeText(product.series);
+      const name = deriveProductSeries(product);
       const key = normaliseProductSearch(name);
       if (!name || !key) return;
       const current = grouped.get(key);
@@ -661,7 +661,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
            </div>}
            {pickerOpen && <div id={productMenuId} className="cw-product-menu" role="listbox" aria-label="选择产品或系列"><div className="cw-product-search"><Search size={14} aria-hidden="true" /><input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="搜索型号、推广名、系列或SKU" aria-label="搜索产品型号、系列或SKU" /></div><div className="cw-product-options">
              {filteredSeries.length > 0 && <div className="cw-product-section"><div className="cw-product-section-title"><span>产品系列</span><small>可整系列生成宣传文案</small></div>{filteredSeries.map((series) => { const selected = selectedSeriesKeys.includes(series.key); return <button type="button" role="option" aria-selected={selected} key={`series-${series.key}`} className={`cw-product-series-option ${selected ? "selected" : ""}`} onClick={() => toggleSeries(series)}><span className="cw-check-box" aria-hidden="true">{selected && <Check size={12} />}</span><span><b>{series.name}</b><small>整系列 · {series.products.length}个启用型号</small></span><small className="cw-series-action">{selected ? "已选择" : "选择系列"}</small></button>; })}</div>}
-             <div className="cw-product-section"><div className="cw-product-section-title"><span>具体型号</span><small>推广名为主，标准型号为辅</small></div>{filteredProducts.length ? filteredProducts.map((product) => <button type="button" role="option" aria-selected={selectedIds.includes(product.id)} key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""} onClick={() => toggleProduct(product.id)}><span className="cw-check-box" aria-hidden="true">{selectedIds.includes(product.id) && <Check size={12} />}</span><span><b>{product.promotionName || "未填写推广名"}</b><small>型号：{product.model}</small><small>{product.series || "未分系列"} · {product.sku || "无SKU"}</small></span></button>) : <div className="cw-product-empty" role="status">没有匹配的启用产品或系列，请调整关键词</div>}</div>
+             <div className="cw-product-section"><div className="cw-product-section-title"><span>具体型号</span><small>推广名为主，标准型号为辅</small></div>{filteredProducts.length ? filteredProducts.map((product) => <button type="button" role="option" aria-selected={selectedIds.includes(product.id)} key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""} onClick={() => toggleProduct(product.id)}><span className="cw-check-box" aria-hidden="true">{selectedIds.includes(product.id) && <Check size={12} />}</span><span><b>{product.promotionName || "未填写推广名"}</b><small>型号：{product.model}</small><small>{deriveProductSeries(product) || "未分系列"} · {product.sku || "无SKU"}</small></span></button>) : <div className="cw-product-empty" role="status">没有匹配的启用产品或系列，请调整关键词</div>}</div>
            </div><div className="cw-product-menu-footer"><span>已支持多选；选择系列会一次引用该系列全部型号资料</span><button type="button" onClick={() => closeProductPicker(true)}>完成选择</button></div></div>}
         </div>
         <div className="cw-form-grid">

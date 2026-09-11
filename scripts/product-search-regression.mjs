@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-const { normaliseProductSearch, splitProductSearchTerms, productMatchesSearch } = await import("../lib/product-search.ts");
+const { deriveProductSeries, normaliseProductSearch, splitProductSearchTerms, productMatchesSearch } = await import("../lib/product-search.ts");
 const { shouldGenerateSeparately } = await import("../lib/copywriting-selection.ts");
 
 const product = {
@@ -11,6 +11,12 @@ const product = {
 };
 
 assert.equal(normaliseProductSearch(" 鹤 7-Pro / 26款 "), "鹤7pro26款");
+assert.equal(deriveProductSeries({ promotionName: "65鹤7 PRO 26款" }), "鹤7 PRO 26款");
+assert.equal(deriveProductSeries({ promotionName: "75英寸 鹤7 PRO 26款" }), "鹤7 PRO 26款");
+assert.equal(deriveProductSeries({ series: "业务确认系列", promotionName: "65鹤7 PRO 26款" }), "业务确认系列");
+assert.equal(normaliseProductSearch(deriveProductSeries({ promotionName: "65鹤7 PRO 26款" })), normaliseProductSearch(deriveProductSeries({ promotionName: "75鹤7 PRO 26款" })), "65/75 same series should share a grouping key");
+assert.equal(deriveProductSeries({ promotionName: "鹤7 PRO 26款" }), "", "promotion names without a safe size prefix stay ungrouped");
+assert.equal(deriveProductSeries({ model: "65鹤7 PRO 26款" }), "", "canonical model must never be used to guess a series");
 assert.deepEqual(splitProductSearchTerms("鹤7 26"), ["鹤7", "26"]);
 assert.deepEqual(splitProductSearchTerms("鹤6Ultra"), ["鹤6ultra"]);
 assert(productMatchesSearch(product, "鹤7 26"), "space-separated terms should use AND matching");
