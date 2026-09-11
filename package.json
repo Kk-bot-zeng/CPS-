@@ -10,6 +10,8 @@
     "db:setup": "node scripts/setup-local-db.mjs",
     "db:seed-demo": "node scripts/seed-demo-data.mjs",
     "admin:create": "node scripts/create-admin.mjs",
+    "test:copywriting-rules": "node --experimental-strip-types scripts/copywriting-rules-regression.mjs",
+    "test:product-search": "node --experimental-strip-types scripts/product-search-regression.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

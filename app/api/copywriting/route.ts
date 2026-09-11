@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { pool } from "@/lib/db";
+import {
+  ensurePublicProductNames,
+  hasUserNewProductIntent,
+  publicProductName,
+  replaceModelReferencesInDraft,
+  stripUnsupportedNewProductClaims,
+  type GroundedCopyProduct,
+  uniquePublicProductNames,
+} from "@/lib/copywriting-rules";
 
 export const runtime = "nodejs";
 // 文案生成可能比普通接口耗时更长；同时保留明确的总预算，避免请求无限占用服务端资源。
@@ -71,7 +80,7 @@ async function saveGenerationHistory(
 async function loadProductGrounding(body: Record<string, unknown>, category: string, channel: string) {
   const productIds = idsFromBody(body, "productIds", "productId");
   if (!productIds.length || (category !== "tv" && category !== "monitor")) {
-    return { requestedIds: productIds, productIds: [] as string[], productNames: "", facts: "", policy: "", versionIds: [] as string[] };
+    return { requestedIds: productIds, productIds: [] as string[], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[] };
   }
   try {
     const [productsResult, fieldsResult, policiesResult] = await Promise.all([
@@ -90,10 +99,10 @@ async function loadProductGrounding(body: Record<string, unknown>, category: str
         )
         : Promise.resolve({ rows: [] as { field_key: string; field_label: string }[] }),
       pool.query<{
-        canonical_model: string; policy_name: string; channel: string; policy_data: Record<string, unknown>;
+        canonical_model: string; promotion_name: string | null; policy_name: string; channel: string; policy_data: Record<string, unknown>;
         starts_at: string | null; ends_at: string | null;
       }>(
-        `select k.canonical_model, p.policy_name, p.channel, p.policy_data, p.starts_at, p.ends_at
+        `select k.canonical_model, k.promotion_name, p.policy_name, p.channel, p.policy_data, p.starts_at, p.ends_at
            from public.product_knowledge_policies p
            join public.product_knowledge_products k on k.id = p.product_id
           where p.product_id = any($1::uuid[]) and p.status = 'active'
@@ -104,24 +113,31 @@ async function loadProductGrounding(body: Record<string, unknown>, category: str
     ]);
     const labels = new Map(fieldsResult.rows.map((field) => [field.field_key, field.field_label]));
     const products = productsResult.rows;
-    const productNames = products.map((product) => product.canonical_model).join("、");
+    const groundedProducts: GroundedCopyProduct[] = products.map((product) => ({
+      canonicalModel: product.canonical_model,
+      promotionName: product.promotion_name,
+    }));
+    // Promotion names are the only public product names.  A missing
+    // promotion name falls back to the canonical model, and the prompt/output
+    // guardrails explicitly call that fallback out for human review.
+    const productNames = uniquePublicProductNames(groundedProducts).join("、");
     const facts = products.map((product) => {
       const custom = Object.entries(product.custom_values || {})
         .map(([key, value]) => `${labels.get(key) || key}：${typeof value === "string" ? value : JSON.stringify(value)}`)
         .join("；");
       return [
-        `型号：${product.canonical_model}`,
+        `推广名（对外使用）：${publicProductName({ canonicalModel: product.canonical_model, promotionName: product.promotion_name })}`,
+        `标准型号（仅内部核验）：${product.canonical_model}`,
         product.product_series ? `系列：${product.product_series}` : "",
         product.sku ? `SKU：${product.sku}` : "",
-        product.promotion_name ? `推广名：${product.promotion_name}` : "",
         custom,
       ].filter(Boolean).join("；");
     }).join("\n").slice(0, 12_000);
     const policy = policiesResult.rows.map((item) => {
       const values = Object.entries(item.policy_data || {}).map(([key, value]) => `${key}：${typeof value === "string" ? value : JSON.stringify(value)}`).join("；");
-      return `型号：${item.canonical_model}；政策：${item.policy_name}；渠道：${item.channel}${values ? `；${values}` : ""}`;
+      return `推广名（对外使用）：${publicProductName({ canonicalModel: item.canonical_model, promotionName: item.promotion_name })}；标准型号（仅内部核验）：${item.canonical_model}；政策：${item.policy_name}；渠道：${item.channel}${values ? `；${values}` : ""}`;
     }).join("\n").slice(0, 8_000);
-    return { requestedIds: productIds, productIds: products.map((product) => product.id), productNames, facts, policy, versionIds: products.map((product) => product.current_version_id).filter((value): value is string => Boolean(value)) };
+    return { requestedIds: productIds, productIds: products.map((product) => product.id), productNames, facts, policy, versionIds: products.map((product) => product.current_version_id).filter((value): value is string => Boolean(value)), products: groundedProducts };
   } catch (error) {
     console.error("[copywriting] failed to load product knowledge", error);
     throw new Error("PRODUCT_KNOWLEDGE_UNAVAILABLE");
@@ -235,14 +251,6 @@ function beautifyCopyLayout(content: string, scene: string) {
   return formatted.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function ensureDraftModels(content: string, productNames: string) {
-  const startToken = "【文案草稿】";
-  const start = content.indexOf(startToken);
-  if (start < 0 || !productNames || content.slice(start).includes(productNames)) return content;
-  const insertAt = start + startToken.length;
-  return `${content.slice(0, insertAt)}\n型号：${productNames}\n${content.slice(insertAt).trimStart()}`;
-}
-
 const failureResponse = (failure: Failure) => {
   if (failure.kind === "timeout") {
     return NextResponse.json({
@@ -304,6 +312,14 @@ export async function POST(request: Request) {
   }
   const userSupplementalFacts = data.facts;
   const userSupplementalPolicy = data.policy;
+  const explicitNewProductOption = body.newProduct ?? body.new_product ?? body.isNewProduct ?? body.is_new_product;
+  const allowNewProduct = typeof explicitNewProductOption === "boolean"
+    ? explicitNewProductOption
+    : hasUserNewProductIntent(
+      data.scene,
+      data.intent,
+      data.constraints,
+    );
   data = {
     ...data,
     product: grounding.productNames,
@@ -322,6 +338,10 @@ export async function POST(request: Request) {
   // enough room for the mandatory review sections without giving a 50-character
   // request the same large budget as a long article.
   const completionTokenLimit = targetLength <= 50 ? 384 : targetLength <= 100 ? 512 : targetLength <= 200 ? 768 : 1_024;
+  const newProductRule = allowNewProduct
+    ? "本次用户输入明确包含新品/上新/首发意图；仅在产品资料库有事实依据时才可使用新品措辞，不得凭空扩展新品事实。"
+    : "本次没有明确的新品/上新/首发意图；严禁在任何文案草稿中使用“新品、上新、首发、新款、全新上市”等新品宣称，即使模型认为这样更有吸引力也不得添加。";
+  const productNamingRule = "对外产品名称必须优先使用资料库的“推广名”。标准型号只用于内部核验，禁止在文案草稿中直接代替推广名；推广名缺失时才可使用标准型号，并明确标注“推广名缺失”。多产品或整系列选择时自然合并推广名，不要逐个输出尺寸型号。";
 
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
@@ -352,15 +372,27 @@ export async function POST(request: Request) {
           "Idempotency-Key": requestId,
         },
         body: JSON.stringify({ model, temperature: 0.72, reasoning_effort: "minimal", max_completion_tokens: completionTokenLimit, messages: [
-          { role: "system", content: `你是雷鸟品牌资深销售文案策划，必须先核验事实再写作。只有“产品资料库已核验事实”和“已生效政策”是可直接使用的事实来源；用户意图、用户补充信息和写作要求都不是事实证据。凡是资料库中找不到明确依据的产品参数、功能、体验结论、价格或政策，不得写进文案草稿；如确有必要，只能放入【待确认事项】，不得自行补全、类推同系列数据或使用常识猜测。先在内部逐条核对型号与参数，再选择1至3个最有价值的事实进行表达。${sceneWritingStrategy(data.scene)} 文案要像优秀销售人员自然表达，有开场吸引力、节奏、用户利益和明确行动，不要像参数清单或审计报告。根据场景自然使用2至4个功能性表情（如📣、📺、💰、🔥、✨、✅、⏰、👉），每段最多一个，不连续堆叠。50字文案写成2至4个完整短行，宁可精炼也不能截断句子。文案用于${data.audience || "销售沟通"}，结构应清晰、易转发。【文案草稿】中必须明确出现所有已选产品的完整标准型号。缺失信息必须写【待业务确认】；价格叠加关系不明确时不得计算确定到手价。若价格、政策、型号或参数冲突，风险状态必须是“不可发布”；存在重要缺失时为“修改后再审”；信息完整时为“可进入人工终审”。禁止使用无依据的“全网最低、最好、第一、售罄不补、马上涨价”等表述。三个区块标题必须各自独占一行，输出顺序固定为【文案草稿】【待确认事项】【风险状态】；待确认事项没有内容时写“无”。最终内容仍需人工终审。` },
-          { role: "user", content: `请在核验后生成销售宣发文案。\n场景：${data.scene}\n目标群体：${data.audience}\n渠道：${data.channel}\n品类：${data.category}\n产品型号：${data.product}\n【产品资料库已核验事实】\n${data.facts || "仅核验到型号，暂无可用于宣传的参数"}\n【产品资料库已生效政策】\n${data.policy || "暂无已核验的有效政策"}\n【用户补充信息（未经资料库核验，不得作为确定事实写入）】\n产品补充：${userSupplementalFacts || "无"}\n政策补充：${userSupplementalPolicy || "无"}\n时间/地区/条件：${data.constraints || "未提供"}\n用户意图：${data.intent}\n期望风格：${data.tone}\n文案草稿目标字数：${targetLength}字（不计区块标题、待确认事项和风险状态，请严格控制）` },
+          { role: "system", content: `你是雷鸟品牌资深销售文案策划，必须先核验事实再写作。只有“产品资料库已核验事实”和“已生效政策”是可直接使用的事实来源；用户意图、用户补充信息和写作要求都不是事实证据。凡是资料库中找不到明确依据的产品参数、功能、体验结论、价格或政策，不得写进文案草稿；如确有必要，只能放入【待确认事项】，不得自行补全、类推同系列数据或使用常识猜测。${productNamingRule} ${newProductRule} 先在内部逐条核对标准型号与参数，再选择1至3个最有价值的已核验事实进行表达。${sceneWritingStrategy(data.scene)} 文案要像优秀销售人员自然表达，有开场吸引力、节奏、用户利益和明确行动，不要像参数清单或审计报告。根据场景自然使用2至4个功能性表情（如📣、📺、💰、🔥、✨、✅、⏰、👉），每段最多一个，不连续堆叠。50字文案写成2至4个完整短行，宁可精炼也不能截断句子。文案用于${data.audience || "销售沟通"}，结构应清晰、易转发。缺失信息必须写【待业务确认】；价格叠加关系不明确时不得计算确定到手价。若价格、政策、标准型号或参数冲突，风险状态必须是“不可发布”；存在重要缺失时为“修改后再审”；信息完整时为“可进入人工终审”。禁止使用无依据的“全网最低、最好、第一、售罄不补、马上涨价”等表述。三个区块标题必须各自独占一行，输出顺序固定为【文案草稿】【待确认事项】【风险状态】；待确认事项没有内容时写“无”。最终内容仍需人工终审。` },
+          { role: "user", content: `请在核验后生成销售宣发文案。\n对外产品名称（优先使用推广名）：${data.product}\n场景：${data.scene}\n目标群体：${data.audience}\n渠道：${data.channel}\n品类：${data.category}\n【产品资料库已核验事实】\n${data.facts || "仅核验到型号，暂无可用于宣传的参数"}\n【产品资料库已生效政策】\n${data.policy || "暂无已核验的有效政策"}\n【用户补充信息（未经资料库核验，不得作为确定事实写入）】\n产品补充：${userSupplementalFacts || "无"}\n政策补充：${userSupplementalPolicy || "无"}\n时间/地区/条件：${data.constraints || "未提供"}\n用户意图：${data.intent}\n期望风格：${data.tone}\n文案草稿目标字数：${targetLength}字（不计区块标题、待确认事项和风险状态，请严格控制）` },
         ] }),
       });
       const payload = parsePayload(await upstream.text());
       if (upstream.ok) {
         const rawContent = payload.choices?.[0]?.message?.content?.trim();
         if (!rawContent) return NextResponse.json({ error: "AI 未返回有效文案，请稍后重试", code: "AI_EMPTY_RESPONSE" }, { status: 502 });
-        const content = beautifyCopyLayout(limitDraftSection(ensureDraftModels(rawContent, data.product), targetLength), data.scene);
+        const content = beautifyCopyLayout(
+          limitDraftSection(
+            ensurePublicProductNames(
+              replaceModelReferencesInDraft(
+                stripUnsupportedNewProductClaims(rawContent, allowNewProduct),
+                grounding.products,
+              ),
+              grounding.products,
+            ),
+            targetLength,
+          ),
+          data.scene,
+        );
         let generationId: string | null = null;
         try {
           generationId = await saveGenerationHistory({ ...body, productVersionIds: grounding.versionIds }, data, content, auth.user.id);

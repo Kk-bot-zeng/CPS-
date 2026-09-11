@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import type { ChannelFilter } from "@/lib/channels";
 import { channelName } from "@/lib/channels";
+import { shouldGenerateSeparately } from "@/lib/copywriting-selection";
+import { normaliseProductSearch, productMatchesSearch } from "@/lib/product-search";
 
 type ProductCategory = "tv" | "monitor";
 type TabKey = "generator" | "products" | "policies" | "versions" | "history";
@@ -105,6 +107,13 @@ type CopyHistory = {
   scene: string;
   createdAt: string;
   content: string;
+};
+
+type ProductSeriesOption = {
+  key: string;
+  name: string;
+  products: ProductKnowledge[];
+  productIds: string[];
 };
 
 function categoryName(category: ProductCategory) {
@@ -490,6 +499,7 @@ export default function ProductKnowledgeWorkspace({ channel, category }: { chann
 function GeneratorTab({ category, channel, products, fields, policies, history, onHistory }: { category: ProductCategory; channel: ChannelFilter; products: ProductKnowledge[]; fields: KnowledgeField[]; policies: Policy[]; history: CopyHistory[]; onHistory: (entry: CopyHistory) => void }) {
   const [form, setForm] = useState({ scene: "产品卖点", audience: "达人群", tone: "adaptive", length: "50", customLength: "", mode: "merge", intent: "", constraints: "", policy: "" });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<string[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const productPickerRef = useRef<HTMLDivElement | null>(null);
@@ -499,12 +509,41 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const filteredProducts = useMemo(() => products.filter((product) => `${product.model} ${product.series} ${product.sku} ${product.promotionName}`.toLowerCase().includes(productSearch.toLowerCase())), [products, productSearch]);
+  const productSeriesOptions = useMemo<ProductSeriesOption[]>(() => {
+    const grouped = new Map<string, ProductSeriesOption>();
+    products.forEach((product) => {
+      const name = safeText(product.series);
+      const key = normaliseProductSearch(name);
+      if (!name || !key) return;
+      const current = grouped.get(key);
+      if (current) {
+        current.products.push(product);
+        current.productIds.push(product.id);
+      } else {
+        grouped.set(key, { key, name, products: [product], productIds: [product.id] });
+      }
+    });
+    return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  }, [products]);
+  const filteredProducts = useMemo(() => products.filter((product) => productMatchesSearch(product, productSearch)), [products, productSearch]);
+  const filteredSeries = useMemo(() => {
+    if (!productSearch.trim()) return productSeriesOptions;
+    return productSeriesOptions.filter((series) => productMatchesSearch({ series: series.name }, productSearch) || series.products.some((product) => productMatchesSearch(product, productSearch)));
+  }, [productSearch, productSeriesOptions]);
   const selectedProducts = products.filter((product) => selectedIds.includes(product.id));
+  const selectedSeries = productSeriesOptions.filter((series) => selectedSeriesKeys.includes(series.key));
+  const selectedSeriesProductIds = useMemo(() => new Set(selectedSeries.flatMap((series) => series.productIds)), [selectedSeries]);
+  const selectedStandaloneProducts = selectedProducts.filter((product) => !selectedSeriesProductIds.has(product.id));
   const selectedPolicyText = selectedProducts.map((product) => policies.filter((policy) => policy.model === product.model && policy.status === "active" && (channel === "all" || policy.channel === "all" || policy.channel === channel)).map((policy) => `${policy.name}：${policy.content}`).join("\n")).filter(Boolean).join("\n");
   const channelLabel = channel === "all" ? "全部渠道" : channelName(channel);
   const categoryLabel = categoryName(category);
   const length = form.length === "custom" ? form.customLength : form.length;
+  const selectionType = selectedSeries.length ? (selectedStandaloneProducts.length ? "series_and_products" : "series") : "products";
+  const selectionSeriesPayload = selectedSeries.map((series) => ({ name: series.name, productIds: series.productIds }));
+  const generationProductLabel = [...new Set([
+    ...selectedSeries.map((series) => series.name),
+    ...selectedStandaloneProducts.map((product) => product.promotionName || product.model),
+  ].filter(Boolean))].join("、");
   const closeProductPicker = (restoreFocus = false) => {
     setPickerOpen(false);
     setProductSearch("");
@@ -532,14 +571,36 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
     };
   }, [pickerOpen]);
 
+  useEffect(() => {
+    const availableIds = new Set(products.map((product) => product.id));
+    setSelectedIds((current) => current.filter((id) => availableIds.has(id)));
+    const availableSeries = new Set(productSeriesOptions.map((series) => series.key));
+    setSelectedSeriesKeys((current) => current.filter((key) => availableSeries.has(key)));
+  }, [products, productSeriesOptions]);
+
   function toggleProduct(id: string) {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    // Deselecting one item from a selected series turns that series into an
+    // explicit product selection, so the UI never claims the whole series is
+    // selected while one of its models is missing.
+    setSelectedSeriesKeys((current) => current.filter((key) => {
+      const series = productSeriesOptions.find((item) => item.key === key);
+      return !series?.productIds.includes(id);
+    }));
+  }
+
+  function toggleSeries(series: ProductSeriesOption) {
+    const selected = selectedSeriesKeys.includes(series.key);
+    setSelectedSeriesKeys((current) => selected ? current.filter((key) => key !== series.key) : [...current, series.key]);
+    setSelectedIds((current) => selected
+      ? current.filter((id) => !series.productIds.includes(id))
+      : [...new Set([...current, ...series.productIds])]);
   }
 
   async function generateOne(product: ProductKnowledge | null, productIds: string[] = product ? [product.id] : [], productLabel?: string) {
-    const productName = productLabel || product?.model || "未选择型号";
+    const productName = productLabel || product?.promotionName || product?.model || "未选择型号";
     const facts = product ? formatFacts(product, fields) : "未从产品资料库选择型号";
-    const response = await fetch("/api/copywriting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene: form.scene, audience: form.audience, tone: ({ adaptive: "根据场景自动调整", professional: "专业正式", lively: "活泼生动", concise: "简洁有力", emotional: "情感共鸣" } as Record<string, string>)[form.tone] || form.tone, length: `${length}字`, product: productName, productIds, facts, policy: form.policy || selectedPolicyText, constraints: form.constraints, intent: form.intent, channel: channel === "all" ? "all" : channel, category, }) });
+    const response = await fetch("/api/copywriting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene: form.scene, audience: form.audience, tone: ({ adaptive: "根据场景自动调整", professional: "专业正式", lively: "活泼生动", concise: "简洁有力", emotional: "情感共鸣" } as Record<string, string>)[form.tone] || form.tone, length: `${length}字`, product: productName, productIds, selectedProductIds: selectedIds, selectionType, selectedSeries: selectionSeriesPayload, facts, policy: form.policy || selectedPolicyText, constraints: form.constraints, intent: form.intent, channel: channel === "all" ? "all" : channel, category, }) });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "文案生成失败");
     return safeText(payload.content);
@@ -550,14 +611,17 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
     setGenerating(true); setResult(""); setError("");
     try {
       const output: string[] = [];
-      if (form.mode === "separate" && selectedProducts.length > 1) {
-        for (const product of selectedProducts) output.push(`【${product.model}】\n${await generateOne(product, [product.id])}`);
+      // A series is one campaign unit: keep the complete series as the
+      // grounding set and generate one coherent piece.  Per-model output is
+      // available for explicit product multi-selects only.
+      if (shouldGenerateSeparately(form.mode, selectedProducts.length, selectedSeries.length > 0)) {
+        for (const product of selectedProducts) output.push(`【${product.promotionName || product.model}】\n${await generateOne(product, [product.id], product.promotionName || product.model)}`);
       } else {
-        output.push(await generateOne(selectedProducts[0], selectedProducts.map((item) => item.id), selectedProducts.map((item) => item.model).join("、")));
+        output.push(await generateOne(selectedProducts[0], selectedProducts.map((item) => item.id), generationProductLabel));
       }
       const content = output.join("\n\n");
       setResult(content);
-      onHistory({ id: `copy-${Date.now()}`, products: selectedProducts.map((product) => product.model), length: `${length}字`, scene: form.scene, createdAt: new Date().toLocaleString("zh-CN", { hour12: false }), content });
+      onHistory({ id: `copy-${Date.now()}`, products: [...new Set([...selectedSeries.map((series) => series.name), ...selectedStandaloneProducts.map((product) => product.promotionName || product.model)])], length: `${length}字`, scene: form.scene, createdAt: new Date().toLocaleString("zh-CN", { hour12: false }), content });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "文案生成失败，请稍后重试"); } finally { setGenerating(false); }
   }
 
@@ -586,13 +650,19 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
           <label className="cw-field"><span>表达风格</span><select value={form.tone} onChange={(event) => setForm({ ...form, tone: event.target.value })}><option value="adaptive">场景自适应</option><option value="professional">专业正式</option><option value="lively">活泼生动</option><option value="concise">简洁有力</option><option value="emotional">情感共鸣</option></select></label>
           <label className="cw-field"><span>文案长度</span><select value={form.length} onChange={(event) => setForm({ ...form, length: event.target.value })}><option value="50">50字（群发短文案）</option><option value="100">100字（精简版）</option><option value="200">200字（标准版）</option><option value="custom">自定义字数</option></select></label>
           {form.length === "custom" && <label className="cw-field"><span>自定义字数</span><input value={form.customLength} onChange={(event) => setForm({ ...form, customLength: event.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="例如 160" inputMode="numeric" /></label>}
-          {selectedIds.length > 1 && <label className="cw-field"><span>多型号生成方式</span><select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}><option value="merge">合并生成一条</option><option value="separate">每个型号分别生成</option></select></label>}
+          {selectedIds.length > 1 && !selectedSeries.length && <label className="cw-field"><span>多型号生成方式</span><select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}><option value="merge">合并生成一条</option><option value="separate">每个型号分别生成</option></select></label>}
         </div>
         <div className="cw-product-select-wrap" ref={productPickerRef}>
-          <span className="cw-field-label">选择产品型号 <i>*</i></span>
-           <button ref={productTriggerRef} type="button" className="cw-product-trigger" onClick={() => pickerOpen ? closeProductPicker(true) : setPickerOpen(true)} aria-expanded={pickerOpen} aria-haspopup="listbox" aria-controls={productMenuId}><span>{selectedProducts.length ? `已选择 ${selectedProducts.length} 个型号` : "搜索并选择一个或多个型号"}</span><ChevronDown size={15} aria-hidden="true" /></button>
-           {selectedProducts.length > 0 && <div className="cw-selected-chips">{selectedProducts.map((product) => <button type="button" key={product.id} onClick={() => toggleProduct(product.id)} aria-label={`移除${product.model}`}>{product.model}<X size={12} aria-hidden="true" /></button>)}</div>}
-           {pickerOpen && <div id={productMenuId} className="cw-product-menu" role="listbox" aria-label="选择产品型号"><div className="cw-product-search"><Search size={14} aria-hidden="true" /><input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="搜索型号、推广名、系列或SKU" aria-label="搜索产品型号" /></div><div className="cw-product-options">{filteredProducts.length ? filteredProducts.map((product) => <button type="button" role="option" aria-selected={selectedIds.includes(product.id)} key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""} onClick={() => toggleProduct(product.id)}><span className="cw-check-box" aria-hidden="true">{selectedIds.includes(product.id) && <Check size={12} />}</span><span><b>{product.promotionName || "未填写推广名"}</b><small>型号：{product.model}</small><small>{product.series || "未分系列"} · {product.sku || "无SKU"}</small></span></button>) : <div className="cw-product-empty" role="status">没有匹配的启用型号，请先在产品资料库维护</div>}</div><div className="cw-product-menu-footer"><span>可多选，生成时会自动引用对应资料版本</span><button type="button" onClick={() => closeProductPicker(true)}>完成选择</button></div></div>}
+          <span className="cw-field-label">选择产品或系列 <i>*</i></span>
+           <button ref={productTriggerRef} type="button" className="cw-product-trigger" onClick={() => pickerOpen ? closeProductPicker(true) : setPickerOpen(true)} aria-expanded={pickerOpen} aria-haspopup="listbox" aria-controls={productMenuId}><span>{selectedSeries.length ? `已选择 ${selectedSeries.length} 个系列 · ${selectedProducts.length} 个型号` : selectedProducts.length ? `已选择 ${selectedProducts.length} 个型号` : "搜索并选择产品或系列"}</span><ChevronDown size={15} aria-hidden="true" /></button>
+           {(selectedSeries.length > 0 || selectedStandaloneProducts.length > 0) && <div className="cw-selected-chips">
+             {selectedSeries.map((series) => <button type="button" className="cw-series-chip" key={`series-${series.key}`} onClick={() => toggleSeries(series)} aria-label={`取消选择${series.name}系列`}><span className="cw-selected-chip-copy"><b>{series.name}</b><small>整系列 · {series.products.length}个型号</small></span><X size={12} aria-hidden="true" /></button>)}
+             {selectedStandaloneProducts.map((product) => <button type="button" key={product.id} onClick={() => toggleProduct(product.id)} aria-label={`移除${product.promotionName || product.model}`}><span className="cw-selected-chip-copy"><b>{product.promotionName || "未填写推广名"}</b><small>{product.model}</small></span><X size={12} aria-hidden="true" /></button>)}
+           </div>}
+           {pickerOpen && <div id={productMenuId} className="cw-product-menu" role="listbox" aria-label="选择产品或系列"><div className="cw-product-search"><Search size={14} aria-hidden="true" /><input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="搜索型号、推广名、系列或SKU" aria-label="搜索产品型号、系列或SKU" /></div><div className="cw-product-options">
+             {filteredSeries.length > 0 && <div className="cw-product-section"><div className="cw-product-section-title"><span>产品系列</span><small>可整系列生成宣传文案</small></div>{filteredSeries.map((series) => { const selected = selectedSeriesKeys.includes(series.key); return <button type="button" role="option" aria-selected={selected} key={`series-${series.key}`} className={`cw-product-series-option ${selected ? "selected" : ""}`} onClick={() => toggleSeries(series)}><span className="cw-check-box" aria-hidden="true">{selected && <Check size={12} />}</span><span><b>{series.name}</b><small>整系列 · {series.products.length}个启用型号</small></span><small className="cw-series-action">{selected ? "已选择" : "选择系列"}</small></button>; })}</div>}
+             <div className="cw-product-section"><div className="cw-product-section-title"><span>具体型号</span><small>推广名为主，标准型号为辅</small></div>{filteredProducts.length ? filteredProducts.map((product) => <button type="button" role="option" aria-selected={selectedIds.includes(product.id)} key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""} onClick={() => toggleProduct(product.id)}><span className="cw-check-box" aria-hidden="true">{selectedIds.includes(product.id) && <Check size={12} />}</span><span><b>{product.promotionName || "未填写推广名"}</b><small>型号：{product.model}</small><small>{product.series || "未分系列"} · {product.sku || "无SKU"}</small></span></button>) : <div className="cw-product-empty" role="status">没有匹配的启用产品或系列，请调整关键词</div>}</div>
+           </div><div className="cw-product-menu-footer"><span>已支持多选；选择系列会一次引用该系列全部型号资料</span><button type="button" onClick={() => closeProductPicker(true)}>完成选择</button></div></div>}
         </div>
         <div className="cw-form-grid">
           <label className="cw-field cw-wide"><span>活动政策与价格依据</span><textarea value={form.policy} onChange={(event) => setForm({ ...form, policy: event.target.value })} placeholder={selectedPolicyText ? "已自动带入当前有效政策，可补充本次要求" : "填写优惠、佣金、补贴及有效期；不确定可留空"} /></label>
@@ -603,7 +673,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
         <div className="generator-actions"><button className="primary cw-generate-btn" onClick={() => void handleGenerate()} disabled={generating || !form.intent.trim() || !selectedProducts.length || !length}>{generating ? <><LoaderCircle size={15} className="cw-spin" /> 生成中…</> : <><Sparkles size={15} /> 生成文案</>}</button><small>生成前请确认型号资料和政策已审核；50字为近似长度控制</small></div>
       </div>
       <div className="generator-result-column">
-        {result ? <div className="panel copywriting-result"><div className="panel-head"><div><h3>生成结果</h3><p>{selectedProducts.map((product) => product.model).join("、")} · {length}字 · 待人工终审</p></div><button onClick={() => void handleCopyResult()}><Copy size={14} /> {copied ? "已复制" : "复制文案"}</button></div><div className="cw-result-content"><pre>{result}</pre></div><div className="cw-review-note"><AlertCircle size={14} /> 生成结果已记录资料版本，发布前请人工核对参数、价格和活动政策。</div></div> : <div className="copywriting-empty"><FileText size={42} /><h3>等待生成文案</h3><p>先选择一个或多个型号，设定长度和使用场景，系统会自动引用产品资料库。</p><div className="cw-empty-facts"><CheckCircle2 size={14} /> 已启用防编造校验</div></div>}
+        {result ? <div className="panel copywriting-result"><div className="panel-head"><div><h3>生成结果</h3><p>{generationProductLabel || selectedProducts.map((product) => product.promotionName || product.model).join("、")} · {length}字 · 待人工终审</p></div><button onClick={() => void handleCopyResult()}><Copy size={14} /> {copied ? "已复制" : "复制文案"}</button></div><div className="cw-result-content"><pre>{result}</pre></div><div className="cw-review-note"><AlertCircle size={14} /> 生成结果已记录资料版本，发布前请人工核对参数、价格和活动政策。</div></div> : <div className="copywriting-empty"><FileText size={42} /><h3>等待生成文案</h3><p>先选择一个或多个产品或系列，设定长度和使用场景，系统会自动引用产品资料库。</p><div className="cw-empty-facts"><CheckCircle2 size={14} /> 已启用防编造校验</div></div>}
         {!!history.length && <div className="panel generator-recent"><div className="panel-head"><div><h3>最近生成</h3><p>可在“生成历史”中查看完整记录</p></div></div>{history.slice(0, 3).map((item) => <button key={item.id} onClick={() => setResult(item.content)}><span>{item.products.join("、")}</span><small>{item.length} · {item.createdAt}</small></button>)}</div>}
       </div>
     </div>
