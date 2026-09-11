@@ -8,8 +8,11 @@
  */
 
 export type GroundedCopyProduct = {
+  id?: string;
   canonicalModel: string;
   promotionName?: string | null;
+  /** Server-validated public name for a selected whole series. */
+  seriesPublicName?: string | null;
 };
 
 const POSITIVE_NEW_PRODUCT_RE = /(?:新品(?:上市|发布|首发|来袭)?|全新(?:上市|发布|首发)|上新|首发|新款(?:上市|发布)?)/u;
@@ -44,11 +47,15 @@ export function hasUserNewProductIntent(scene: unknown, intent: unknown, constra
  * fallback when the catalog has no promotion name.
  */
 export function publicProductName(product: GroundedCopyProduct): string {
-  return product.promotionName?.trim() || product.canonicalModel.trim();
+  return product.seriesPublicName?.trim() || product.promotionName?.trim() || product.canonicalModel.trim();
 }
 
 export function hasPromotionName(product: GroundedCopyProduct): boolean {
   return Boolean(product.promotionName?.trim());
+}
+
+export function hasPublicProductName(product: GroundedCopyProduct): boolean {
+  return Boolean(product.seriesPublicName?.trim() || product.promotionName?.trim());
 }
 
 export function uniquePublicProductNames(products: GroundedCopyProduct[]): string[] {
@@ -83,6 +90,14 @@ export function replaceModelReferencesInDraft(content: string, products: Grounde
     const pattern = escapeRegExp(model).replace(/\\ +/g, "\\s*");
     draft = draft.replace(new RegExp(pattern, "giu"), publicProductName(product));
   }
+  // Models can be paraphrased with an inch unit ("65英寸鹤7…") rather than
+  // copied verbatim.  For a validated series, remove that size prefix too;
+  // standalone products retain their own promotion names.
+  const seriesNames = [...new Set(products.map((product) => product.seriesPublicName?.trim()).filter((name): name is string => Boolean(name)))];
+  for (const seriesName of seriesNames) {
+    const pattern = `\\d{2,3}(?:\\.\\d+)?\\s*(?:英寸|寸|吋)?\\s*${escapeRegExp(seriesName)}`;
+    draft = draft.replace(new RegExp(pattern, "giu"), seriesName);
+  }
   return `${content.slice(0, range.start)}${draft}${content.slice(range.end)}`;
 }
 
@@ -96,7 +111,7 @@ export function ensurePublicProductNames(content: string, products: GroundedCopy
   if (!range) return content;
   const draft = content.slice(range.start, range.end);
   const fallbackNames = products
-    .filter((product) => !hasPromotionName(product) && product.canonicalModel.trim())
+    .filter((product) => !hasPublicProductName(product) && product.canonicalModel.trim())
     .map((product) => `标准型号：${product.canonicalModel.trim()}（推广名缺失）`);
   const missing = uniquePublicProductNames(products).filter((name) => !draft.includes(name));
   const missingFallbacks = fallbackNames.filter((name) => !draft.includes(name));

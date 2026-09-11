@@ -66,4 +66,18 @@ const annotatedFallback = ensurePublicProductNames(
 );
 assert.match(annotatedFallback, /标准型号：55S595C Ultra（推广名缺失）/u, "即使模型已输出标准型号，仍需明确推广名缺失");
 
+const selectedSeriesProducts = [65, 75, 85, 98].map((size) => ({
+  canonicalModel: `${size}鹤7 PRO 26款`,
+  promotionName: `${size}鹤7 PRO 26款`,
+  seriesPublicName: "鹤7 PRO 26款",
+}));
+const seriesDraft = "【文案草稿】\n65鹤7 PRO 26款、75鹤7 PRO 26款、85鹤7 PRO 26款、98鹤7 PRO 26款，整系列值得关注。\n【待确认事项】\n无";
+const seriesNamedDraft = ensurePublicProductNames(replaceModelReferencesInDraft(seriesDraft, selectedSeriesProducts), selectedSeriesProducts);
+assert.match(seriesNamedDraft, /鹤7 PRO 26款/u, "整系列文案应使用已核验系列名称");
+assert.doesNotMatch(seriesNamedDraft, /(?:65|75|85|98)鹤7 PRO 26款/u, "整系列文案不得列出具体尺寸型号");
+const inchSeriesDraft = "【文案草稿】\n65英寸鹤7 PRO 26款和98吋鹤7 PRO 26款同属一个系列。\n【待确认事项】\n无";
+const inchSeriesNamedDraft = replaceModelReferencesInDraft(inchSeriesDraft, selectedSeriesProducts);
+assert.match(inchSeriesNamedDraft, /鹤7 PRO 26款/u, "系列名应覆盖带英寸单位的模型表述");
+assert.doesNotMatch(inchSeriesNamedDraft, /(?:65|98)(?:英寸|吋)鹤7 PRO 26款/u, "系列文案不得保留带单位的尺寸前缀");
+
 console.log("copywriting-rules regression: PASS");

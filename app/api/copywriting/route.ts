@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { pool } from "@/lib/db";
+import { deriveProductSeries, normaliseProductSearch } from "@/lib/product-search";
 import {
   ensurePublicProductNames,
   hasUserNewProductIntent,
@@ -29,6 +30,26 @@ const MAX_ATTEMPTS = 2;
 const DEFAULT_RETRY_DELAY_MS = 1_200;
 const MAX_RETRY_DELAY_MS = 4_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type RequestedSeries = { name: string; productIds: string[] };
+
+function readSelectedSeries(body: Record<string, unknown>): { values: RequestedSeries[]; error?: string } {
+  const raw = body.selectedSeries ?? body.selected_series;
+  if (raw === undefined || raw === null) return { values: [] };
+  if (!Array.isArray(raw)) return { values: [], error: "系列选择格式不正确" };
+  const values: RequestedSeries[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return { values: [], error: "系列选择格式不正确" };
+    const record = item as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim().slice(0, 160) : "";
+    const ids = record.productIds ?? record.product_ids;
+    if (!name || !Array.isArray(ids) || !ids.length) return { values: [], error: "系列选择缺少有效名称或产品" };
+    const productIds = [...new Set(ids.filter((value): value is string => typeof value === "string" && UUID_RE.test(value)))];
+    if (productIds.length !== ids.length) return { values: [], error: "系列选择包含无效产品ID" };
+    values.push({ name, productIds });
+  }
+  return { values };
+}
 
 function idsFromBody(body: Record<string, unknown>, key: string, singular: string) {
   const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
@@ -79,8 +100,12 @@ async function saveGenerationHistory(
 
 async function loadProductGrounding(body: Record<string, unknown>, category: string, channel: string) {
   const productIds = idsFromBody(body, "productIds", "productId");
+  const selectedSeries = readSelectedSeries(body);
   if (!productIds.length || (category !== "tv" && category !== "monitor")) {
-    return { requestedIds: productIds, productIds: [] as string[], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[] };
+    return { requestedIds: productIds, productIds: [] as string[], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[], seriesSelectionError: selectedSeries.error };
+  }
+  if (selectedSeries.error) {
+    return { requestedIds: productIds, productIds: [] as string[], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[], seriesSelectionError: selectedSeries.error };
   }
   try {
     const [productsResult, fieldsResult, policiesResult] = await Promise.all([
@@ -113,9 +138,38 @@ async function loadProductGrounding(body: Record<string, unknown>, category: str
     ]);
     const labels = new Map(fieldsResult.rows.map((field) => [field.field_key, field.field_label]));
     const products = productsResult.rows;
+    const productsById = new Map(products.map((product) => [product.id, product]));
+    const seriesPublicNameByProductId = new Map<string, string>();
+    for (const series of selectedSeries.values) {
+      const selectedProducts = series.productIds.map((id) => productsById.get(id));
+      if (selectedProducts.some((product) => !product)) {
+        return { requestedIds: productIds, productIds: [], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[], seriesSelectionError: "系列选择包含未加载或已停用的产品" };
+      }
+      const derivedNames = [...new Set(selectedProducts.map((product) => deriveProductSeries({
+        series: product?.product_series,
+        promotionName: product?.promotion_name,
+        model: product?.canonical_model,
+      })).filter(Boolean))];
+      // The UI sends names derived from the same active product rows.  Do not
+      // trust arbitrary text from the request: require the name to match the
+      // server-derived series label before using it in the prompt.
+      if (derivedNames.length !== 1 || normaliseProductSearch(series.name) !== normaliseProductSearch(derivedNames[0])) {
+        return { requestedIds: productIds, productIds: [], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[], seriesSelectionError: "系列名称与产品资料不匹配，请刷新后重新选择" };
+      }
+      const publicSeriesName = derivedNames[0];
+      for (const productId of series.productIds) {
+        const existing = seriesPublicNameByProductId.get(productId);
+        if (existing && normaliseProductSearch(existing) !== normaliseProductSearch(publicSeriesName)) {
+          return { requestedIds: productIds, productIds: [], productNames: "", facts: "", policy: "", versionIds: [] as string[], products: [] as GroundedCopyProduct[], seriesSelectionError: "同一产品不能归入多个不同系列" };
+        }
+        seriesPublicNameByProductId.set(productId, publicSeriesName);
+      }
+    }
     const groundedProducts: GroundedCopyProduct[] = products.map((product) => ({
+      id: product.id,
       canonicalModel: product.canonical_model,
       promotionName: product.promotion_name,
+      seriesPublicName: seriesPublicNameByProductId.get(product.id) || null,
     }));
     // Promotion names are the only public product names.  A missing
     // promotion name falls back to the canonical model, and the prompt/output
@@ -126,7 +180,8 @@ async function loadProductGrounding(body: Record<string, unknown>, category: str
         .map(([key, value]) => `${labels.get(key) || key}：${typeof value === "string" ? value : JSON.stringify(value)}`)
         .join("；");
       return [
-        `推广名（对外使用）：${publicProductName({ canonicalModel: product.canonical_model, promotionName: product.promotion_name })}`,
+        `推广名（对外使用）：${publicProductName(groundedProducts.find((item) => item.id === product.id) || { canonicalModel: product.canonical_model, promotionName: product.promotion_name })}`,
+        `资料库推广名（内部核验）：${product.promotion_name || "未填写"}`,
         `标准型号（仅内部核验）：${product.canonical_model}`,
         product.product_series ? `系列：${product.product_series}` : "",
         product.sku ? `SKU：${product.sku}` : "",
@@ -135,7 +190,7 @@ async function loadProductGrounding(body: Record<string, unknown>, category: str
     }).join("\n").slice(0, 12_000);
     const policy = policiesResult.rows.map((item) => {
       const values = Object.entries(item.policy_data || {}).map(([key, value]) => `${key}：${typeof value === "string" ? value : JSON.stringify(value)}`).join("；");
-      return `推广名（对外使用）：${publicProductName({ canonicalModel: item.canonical_model, promotionName: item.promotion_name })}；标准型号（仅内部核验）：${item.canonical_model}；政策：${item.policy_name}；渠道：${item.channel}${values ? `；${values}` : ""}`;
+      return `推广名（对外使用）：${publicProductName({ canonicalModel: item.canonical_model, promotionName: item.promotion_name })}；资料库推广名（内部核验）：${item.promotion_name || "未填写"}；标准型号（仅内部核验）：${item.canonical_model}；政策：${item.policy_name}；渠道：${item.channel}${values ? `；${values}` : ""}`;
     }).join("\n").slice(0, 8_000);
     return { requestedIds: productIds, productIds: products.map((product) => product.id), productNames, facts, policy, versionIds: products.map((product) => product.current_version_id).filter((value): value is string => Boolean(value)), products: groundedProducts };
   } catch (error) {
@@ -304,6 +359,9 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "产品资料库暂时无法核验，请稍后重试；为避免生成错误参数，本次未生成文案", code: "PRODUCT_KNOWLEDGE_UNAVAILABLE" }, { status: 503 });
   }
+  if (grounding.seriesSelectionError) {
+    return NextResponse.json({ error: grounding.seriesSelectionError, code: "SERIES_SELECTION_INVALID" }, { status: 400 });
+  }
   if (!grounding.requestedIds.length) {
     return NextResponse.json({ error: "请先从产品资料库选择型号，系统核验参数后才能生成文案", code: "PRODUCT_REQUIRED" }, { status: 400 });
   }
@@ -341,7 +399,7 @@ export async function POST(request: Request) {
   const newProductRule = allowNewProduct
     ? "本次用户输入明确包含新品/上新/首发意图；仅在产品资料库有事实依据时才可使用新品措辞，不得凭空扩展新品事实。"
     : "本次没有明确的新品/上新/首发意图；严禁在任何文案草稿中使用“新品、上新、首发、新款、全新上市”等新品宣称，即使模型认为这样更有吸引力也不得添加。";
-  const productNamingRule = "对外产品名称必须优先使用资料库的“推广名”。标准型号只用于内部核验，禁止在文案草稿中直接代替推广名；推广名缺失时才可使用标准型号，并明确标注“推广名缺失”。多产品或整系列选择时自然合并推广名，不要逐个输出尺寸型号。";
+  const productNamingRule = "对外产品名称必须优先使用资料库的“推广名”。标准型号和原始推广名只用于内部核验，禁止在文案草稿中直接输出具体尺寸型号；推广名缺失且没有已核验系列名称时才可使用标准型号，并明确标注“推广名缺失”。整系列选择时只使用已核验的系列名称，不要逐个列出该系列的尺寸；混合选择时仅补系列名称和独立产品推广名。";
 
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
