@@ -503,6 +503,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerView, setPickerView] = useState<"series" | "products">("series");
+  const [pickerLayout, setPickerLayout] = useState({ top: 0, left: 0, width: 0, maxHeight: 420 });
   const productPickerRef = useRef<HTMLDivElement | null>(null);
   const productTriggerRef = useRef<HTMLButtonElement | null>(null);
   const productMenuId = useId();
@@ -551,8 +552,28 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
     if (restoreFocus) window.requestAnimationFrame(() => productTriggerRef.current?.focus());
   };
 
+  const updatePickerLayout = () => {
+    const trigger = productTriggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    const gap = 8;
+    const edge = 12;
+    const topSafeEdge = 72;
+    const spaceBelow = viewportHeight - rect.bottom - edge - gap;
+    const spaceAbove = rect.top - topSafeEdge - gap;
+    const openAbove = spaceBelow < 360 && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(240, Math.min(520, openAbove ? spaceAbove : spaceBelow));
+    const width = Math.min(640, viewportWidth - edge * 2);
+    const left = Math.min(Math.max(edge, rect.left), viewportWidth - width - edge);
+    const top = openAbove ? Math.max(topSafeEdge, rect.top - maxHeight - gap) : rect.bottom + gap;
+    setPickerLayout({ top, left, width, maxHeight });
+  };
+
   useEffect(() => {
     if (!pickerOpen) return;
+    updatePickerLayout();
     const closeOnOutsidePointer = (event: PointerEvent) => {
       if (productPickerRef.current && !productPickerRef.current.contains(event.target as Node)) {
          closeProductPicker(false);
@@ -566,9 +587,13 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", updatePickerLayout);
+    window.addEventListener("scroll", updatePickerLayout, true);
     return () => {
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", updatePickerLayout);
+      window.removeEventListener("scroll", updatePickerLayout, true);
     };
   }, [pickerOpen]);
 
@@ -660,7 +685,7 @@ function GeneratorTab({ category, channel, products, fields, policies, history, 
              {selectedSeries.map((series) => <button type="button" className="cw-series-chip" key={`series-${series.key}`} onClick={() => toggleSeries(series)} aria-label={`取消选择${series.name}系列`}><span className="cw-selected-chip-copy"><b>{series.name}</b><small>整系列 · {series.products.length}个型号</small></span><X size={12} aria-hidden="true" /></button>)}
              {selectedStandaloneProducts.map((product) => <button type="button" key={product.id} onClick={() => toggleProduct(product.id)} aria-label={`移除${product.promotionName || product.model}`}><span className="cw-selected-chip-copy"><b>{product.promotionName || "未填写推广名"}</b><small>{product.model}</small></span><X size={12} aria-hidden="true" /></button>)}
            </div>}
-           {pickerOpen && <div id={productMenuId} className="cw-product-menu" role="listbox" aria-label="选择产品或系列">
+           {pickerOpen && <div id={productMenuId} className="cw-product-menu" style={pickerLayout} role="listbox" aria-label="选择产品或系列">
              <div className="cw-product-search"><Search size={16} aria-hidden="true" /><input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="搜索推广名、系列、型号或 SKU" aria-label="搜索产品型号、系列或SKU" />{productSearch && <button type="button" onClick={() => setProductSearch("")} aria-label="清空搜索"><X size={15} aria-hidden="true" /></button>}</div>
              <div className="cw-product-view-tabs" role="tablist" aria-label="产品选择方式">
                <button type="button" role="tab" aria-selected={pickerView === "series"} className={pickerView === "series" ? "active" : ""} onClick={() => setPickerView("series")}>按系列 <span>{filteredSeries.length}</span></button>
