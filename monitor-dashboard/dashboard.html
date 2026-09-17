@@ -76,15 +76,21 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 @media(max-width:768px){.filter-banner{padding:7px}.filter-custom-date{left:4px;right:4px;width:auto}.filter-custom-date .custom-date-fields{grid-template-columns:1fr 14px 1fr}}
 
 /* ─── KPI Cards ─── */
-.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line)}
-.kpi-card{background:var(--surface);padding:16px 18px;text-align:center;cursor:pointer;transition:background .15s;border:0;width:100%;font:inherit;color:inherit}
-.kpi-card:hover{background:#f0f7ff}
-.kpi-card .kpi-label{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600}
-.kpi-card .kpi-value{font-size:28px;font-weight:800;color:var(--text);margin-bottom:4px}
-.kpi-card .kpi-unit{font-size:12px;color:var(--muted);font-weight:400}
-.kpi-card .kpi-sub{font-size:11px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);line-height:1.6}
-.kpi-card .kpi-ratio{font-size:16px;font-weight:700;margin-top:4px}
-.kpi-card .kpi-yoy{font-size:12px;font-weight:600;margin-top:4px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:14px 16px;background:#f8fafc}
+.kpi-card{min-width:0;min-height:156px;display:flex;flex-direction:column;align-items:stretch;background:var(--surface);padding:15px 16px;text-align:left;cursor:pointer;transition:background .15s,box-shadow .15s,transform .15s;border:1px solid var(--line);border-radius:10px;font:inherit;color:inherit;box-shadow:0 1px 3px rgba(30,55,90,.06)}
+.kpi-card:hover:not(:disabled){background:#f7fbff;box-shadow:0 4px 14px rgba(30,75,140,.11);transform:translateY(-1px)}
+.kpi-card:disabled{cursor:default;opacity:1}
+.kpi-card .kpi-label{font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:700}
+.kpi-card .kpi-value{font-size:28px;font-weight:800;color:var(--text);margin-bottom:4px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-card .kpi-unit{font-size:12px;color:var(--muted);font-weight:400;margin-left:2px}
+.kpi-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:1px 0 7px}
+.kpi-pair-item{min-width:0;padding:7px 8px;border-radius:7px;background:#f8fafc;border:1px solid #edf1f6}
+.kpi-pair-item b{display:block;font-size:20px;line-height:1.15;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-pair-item span{display:block;margin-top:3px;color:var(--muted);font-size:10px;white-space:nowrap}
+.kpi-empty{display:flex;align-items:center;min-height:48px;color:#98a2b3;font-size:19px;font-weight:700}
+.kpi-card .kpi-sub{font-size:11px;color:var(--muted);margin-top:auto;padding-top:7px;border-top:1px dashed var(--line);line-height:1.55;min-height:35px}
+.kpi-card .kpi-ratio{font-size:14px;font-weight:700;margin-top:5px;color:var(--blue)}
+.kpi-card .kpi-yoy{font-size:11px;font-weight:600;margin-top:3px;min-height:16px}
 .yoy-up{color:var(--red)}.yoy-down{color:var(--green)}
 
 /* ─── Today Overview ─── */
@@ -149,7 +155,12 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .drilldown-section .drilldown-close{float:right;cursor:pointer;color:var(--muted);font-size:16px;border:none;background:none;padding:0 4px}
 .drilldown-section .drilldown-close:hover{color:var(--red)}
 .drilldown-title{font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px}
-.detail-scroll{overflow-x:auto;max-height:400px;overflow-y:auto;border:1px solid var(--line);border-radius:6px}
+.detail-scroll{overflow-x:auto;max-height:430px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+.content-title-cell{max-width:310px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drilldown-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 0 0;color:var(--muted);font-size:11px}
+.drilldown-pager button{height:29px;min-width:58px;padding:0 9px;border:1px solid #d9e3f0;border-radius:6px;background:#fff;color:#315b9c;font:inherit;cursor:pointer}
+.drilldown-pager button:hover:not(:disabled){border-color:#9bb9e5;background:#f7faff}
+.drilldown-pager button:disabled{opacity:.42;cursor:not-allowed}
 
 /* ─── Creator Workbench ─── */
 .workbench-tabs{display:flex;gap:0;border-bottom:2px solid var(--line);margin:0}
@@ -205,8 +216,9 @@ body{font:13px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;backgro
 .footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--line)}
 
 /* Responsive */
-@media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.today-grid,.section.row-split{grid-template-columns:1fr}}
-@media(max-width:768px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.header{flex-wrap:wrap;height:auto;padding:10px 14px;gap:8px}.main{padding:10px}.filter-banner{flex-direction:column;align-items:flex-start}}
+@media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.today-grid,.section.row-split{grid-template-columns:1fr}}
+@media(max-width:768px){.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}.kpi-card{min-height:148px;padding:13px}.kpi-pair-item b{font-size:18px}.header{flex-wrap:wrap;height:auto;padding:10px 14px;gap:8px}.main{padding:10px}.filter-banner{flex-direction:column;align-items:flex-start}}
+@media(max-width:520px){.kpi-grid{grid-template-columns:1fr}.kpi-card{min-height:132px}}
 </style>
 </head>
 <body>
@@ -242,6 +254,7 @@ const state = {
   actionPlan: {}, todayTasks: null,
   aiAnalysis: '', aiFresh: '', autoAnalysis:null, analysisLoading:false,
   drillFilter: null, // {type:'brand'|'creator_name'|'scope'|'date', value:string}
+  drillRows: [], drillPage: 1,
   activeModule: 'platform', activeWB:'tabInvite', latestAvailableDate:'', activeMetrics:['content_count'], invitePage:1, churnPage:1, productPage:1,
   moduleCache:{}, moduleLoading:'', roiRows:[], roiTrackingDays:30, roiLoading:false,
   refreshing:false, dashboardLoading:false, aiGenerating:false, inviteSending:false, roiImporting:false,
@@ -285,6 +298,23 @@ async function apiPost(url,body){ const r=await fetch(API+url,{method:'POST',hea
 
 function fmt(n){ n=Number(n)||0; if(n>=1e6)return(n/1e6).toFixed(1)+'M'; if(n>=1e4)return(n/1e4).toFixed(1)+'万'; return String(n); }
 function fmtY(n){ if(n==null||n===undefined)return'-'; return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtMaybe(n){return n==null||n===''?'—':fmt(n)}
+function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function escapeAttr(value){return escapeHtml(value).replace(/`/g,'&#96;');}
+function firstValue(source,keys){
+  if(!source)return null;
+  for(const key of keys){
+    const value=source[key];
+    if(value!==null&&value!==undefined&&value!=='')return value;
+  }
+  return null;
+}
+function numberValue(source,keys){
+  const value=firstValue(source,keys);
+  if(value===null)return null;
+  const number=Number(value);
+  return Number.isFinite(number)?number:null;
+}
 
 const PERIOD_LABELS={'today':'今天','yesterday':'昨天','7':'近7天','14':'近14天','30':'近30天','current_month':'本月','previous_month':'上月','custom':'自定义'};
 
@@ -600,6 +630,38 @@ function calcChange(cp,key){
 }
 
 // ─── C. KPI Cards Section ─────────────────────────────────────────────────────
+const KPI_CARD_CONFIG=[
+  {key:'content_count',label:'内容数',unit:'条',pair:['雷鸟','全量'],note:'雷鸟品牌内容数 / 全量内容数',drillScope:'thunderbird'},
+  {key:'link_count',label:'蓝链数',unit:'个',pair:['雷鸟','全量'],note:'雷鸟蓝链数 / 全量蓝链数',drillScope:'thunderbird'},
+  {key:'play_count',label:'播放量',unit:'次',pair:['雷鸟','全量'],note:'雷鸟相关播放 / 全量播放',drillScope:'thunderbird'},
+  {key:'store_traffic',label:'店铺流量',unit:'人',pair:['搜索','全店'],note:'搜索流量 / 全店流量'},
+  {key:'store_sales',label:'店铺销售',unit:'元',note:'店铺销售金额'},
+  {key:'jd_clicks',label:'京东联盟点击',unit:'次',note:'京东联盟有效点击'},
+  {key:'jd_amount',label:'京东联盟订单金额',unit:'元',note:'京东联盟订单金额'}
+];
+const KPI_KEY_ALIASES={
+  content_count:['content_count'],link_count:['link_count'],play_count:['play_count'],
+  store_traffic:['store_traffic'],store_sales:['store_sales','sales_amount','store_sales_amount','store_gmv','shop_sales'],
+  jd_clicks:['jd_clicks','jd_click','jd_click_count','alliance_clicks','jd_alliance_clicks'],
+  jd_amount:['jd_amount','jd_order_amount','jd_order_amount_total','alliance_order_amount','order_amount']
+};
+function findKpiCard(cards,key){
+  const aliases=KPI_KEY_ALIASES[key]||[key];
+  return (cards||[]).find(card=>aliases.includes(card?.key))||null;
+}
+function kpiReady(card){
+  if(!card||card.data_status==='unavailable')return false;
+  if(card.data_status==='ready'||card.data_status==='partial')return true;
+  return firstValue(card,['current_value','value','numerator_value','thunderbird_value','current_thunderbird_value','search_value'])!==null;
+}
+function kpiPrimaryValue(card,key){
+  if(key==='store_traffic')return firstValue(card,['search_value','search_visitors','current_value','value']);
+  return firstValue(card,['current_value','value','numerator_value','thunderbird_value','current_thunderbird_value','current']);
+}
+function kpiSecondaryValue(card,key){
+  if(key==='store_traffic')return firstValue(card,['total_visitors','all_value','denominator_value','total_value','current_total_value']);
+  return firstValue(card,['total_value','all_value','denominator_value','industry_value','all_monitored_value','current_total_value']);
+}
 function renderKPISection(){
   const cards=state.kpiCards||[];
   if(!cards.length)return '';
@@ -608,36 +670,40 @@ function renderKPISection(){
     <div class="section-header"><h2>二、核心指标总览（点击下钻→内容明细）</h2></div>
     ${renderCoreMetricChart()}
     <div class="kpi-grid">
-      ${cards.map((card,i)=>{
+      ${KPI_CARD_CONFIG.map((config)=>{
+        const card=findKpiCard(cards,config.key)||{key:config.key,label:config.label,unit:config.unit,data_status:'unavailable',data_message:'该指标暂未接入'};
         const isUp=card.yoy_direction==='↑';
         const yoyColor=isUp?'yoy-up':'yoy-down';
         const yoySymbol=isUp?'↑':'↓';
-        const subMap={content_count:'雷鸟品牌内容数/行业内容数',link_count:'雷鸟品牌蓝链数/全部蓝链数',store_traffic:'京准通搜索+站外流量/全站流量',jd_orders:'京东联盟订单数/全店订单数',jd_amount:'京东联盟订单金额/全店订单金额'};
-        // Backward compatible with an already-running older backend, whose
-        // cards have values but do not yet expose data_status.
-        const drillable=card.data_status==='ready'||(card.data_status==null&&card.current_value!=null);
-        const ready=drillable;
+        const ready=kpiReady(card);
+        const primary=kpiPrimaryValue(card,config.key),secondary=kpiSecondaryValue(card,config.key);
+        const drillable=ready&&!!config.drillScope;
+        const dataMessage=card.data_message||'该指标暂未接入数据源';
+        const cardTitle=ready?(drillable?'点击查看相关内容明细':config.note):dataMessage;
+        const pair=config.pair&&ready?`<div class="kpi-pair"><div class="kpi-pair-item"><b>${fmtMaybe(primary)}</b><span>${config.pair[0]}</span></div><div class="kpi-pair-item"><b>${fmtMaybe(secondary)}</b><span>${config.pair[1]}</span></div></div>`:'';
+        const single=ready&&!config.pair?`<div class="kpi-value">${fmtMaybe(primary)} <span class="kpi-unit">${escapeHtml(card.unit||config.unit)}</span></div>`:'';
+        const empty=!ready?'<div class="kpi-empty">待接入</div>':'';
+        const ratio=ready&&card.ratio!=null?`<div class="kpi-ratio">占比 ${fmt(card.ratio)}%</div>`:'';
+        const yoy=ready&&card.yoy_change_pct!=null?`<div class="kpi-yoy ${yoyColor}">${yoySymbol} 较前一等长周期 ${fmt(Math.abs(card.yoy_change_pct||0))}%${card.prev_ratio!=null?`&nbsp;| 上期 ${fmt(card.prev_ratio)}%`:''}</div>`:'';
         return `
-      <button type="button" class="kpi-card" data-key="${card.key||''}" ${drillable?`onclick="drillToContent('scope','${card.detail_scope||'all'}')"`:''} ${drillable?'':'disabled'} style="cursor:${drillable?'pointer':'default'}" title="${drillable?'点击查看相关内容明细':card.data_message||'数据待补充'}">
-        <div class="kpi-label">${card.label}</div>
-        <div class="kpi-value">${ready?fmt(card.current_value):'待补充'} <span class="kpi-unit">${ready?(card.unit||''):''}</span></div>
-        <div class="kpi-sub">${card.metric_note||subMap[card.key]||card.sub_label||''}<br>
-          ${ready?'行业/全量: '+fmt(card.total_value):(card.data_message||'')}
-        </div>
-        <div class="kpi-ratio" style="color:var(--blue)">${card.ratio==null?'-':fmt(card.ratio)+'%'}</div>
-        <div class="kpi-yoy ${yoyColor}">${card.ratio==null?'':`${yoySymbol} 较前一等长周期 ${fmt(Math.abs(card.yoy_change_pct||0))}%${card.prev_ratio!=null?'&nbsp;| 上期 '+fmt(card.prev_ratio)+'%':''}`}</div>
-      </div>`;}).join('')}
+      <button type="button" class="kpi-card" data-key="${config.key}" ${drillable?`onclick="drillToContent('scope','${card.detail_scope||config.drillScope}')"`:''} ${drillable?'':'disabled'} aria-label="${escapeAttr(config.label)}" title="${escapeAttr(cardTitle)}">
+        <div class="kpi-label">${escapeHtml(config.label)}</div>
+        ${pair}${single}${empty}
+        <div class="kpi-sub">${escapeHtml(card.metric_note||card.sub_label||config.note)}${!ready?`<br><span>${escapeHtml(dataMessage)}</span>`:''}</div>
+        ${ratio}${yoy}
+      </button>`;}).join('')}
     </div>
   </section>`;
 }
 
 const CORE_METRICS={
-  content_count:{label:'内容数',unit:'条',value:d=>Number(d.thunderbird_linked_content_count||0)},
-  link_count:{label:'蓝链数',unit:'个',value:d=>Number(d.thunderbird_link_count||0)},
-  play_count:{label:'播放量',unit:'次',value:d=>Number(d.play_count||0)},
-  store_traffic:{label:'店铺流量',unit:'人',value:d=>Number(d.search_visitors||0)+Number(d.outdoor_visitors||0)},
-  jd_orders:{label:'京东联盟订单',unit:'单',value:d=>Number(d.sales_quantity||0)},
-  jd_amount:{label:'京东联盟佣金',unit:'元',value:d=>Number(d.commission_amount||0)}
+  content_count:{label:'内容数',unit:'条',value:d=>numberValue(d,['thunderbird_linked_content_count','thunderbird_content_count','new_content'])},
+  link_count:{label:'蓝链数',unit:'个',value:d=>numberValue(d,['thunderbird_link_count','thunderbird_blue_link_count'])},
+  play_count:{label:'播放量',unit:'次',value:d=>numberValue(d,['thunderbird_play_count','play_count'])},
+  store_traffic:{label:'店铺流量',unit:'人',value:d=>numberValue(d,['search_visitors','search_traffic'])},
+  store_sales:{label:'店铺销售',unit:'元',value:d=>numberValue(d,['store_sales','sales_amount','store_sales_amount','store_gmv','shop_sales'])},
+  jd_clicks:{label:'京东联盟点击',unit:'次',value:d=>numberValue(d,['jd_clicks','jd_click','jd_click_count','alliance_clicks','jd_alliance_clicks'])},
+  jd_amount:{label:'京东联盟订单金额',unit:'元',value:d=>numberValue(d,['jd_amount','jd_order_amount','alliance_order_amount','actual_paid_amount','order_amount'])}
 };
 function renderCoreMetricChart(){
   const buttons=Object.entries(CORE_METRICS).map(([key,m])=>`<button type="button" class="${state.activeMetrics.includes(key)?'active':''}" aria-pressed="${state.activeMetrics.includes(key)}" onclick="selectCoreMetric('${key}')">${m.label}</button>`).join('');
@@ -666,6 +732,7 @@ function drillToContent(paramKey,paramVal){
   let value=paramVal;
   try{value=decodeURIComponent(paramVal)}catch(e){}
   state.drillFilter={type:paramKey,value};
+  state.drillRows=[];state.drillPage=1;
   renderApp();
   loadDrilldownData(paramKey,paramVal);
   setTimeout(()=>{const el=$('#drilldownSection');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})},100);
@@ -673,8 +740,52 @@ function drillToContent(paramKey,paramVal){
 
 function clearDrillDown(){
   state.drillFilter=null;
+  state.drillRows=[];state.drillPage=1;
   renderApp();
 }
+
+function drillField(row,keys){return firstValue(row,keys)}
+function drillDate(row){
+  const value=drillField(row,['date','published_at','publish_date','created_at']);
+  return value?String(value).slice(0,10):'—';
+}
+function safeContentUrl(value){
+  const url=String(value||'').trim();
+  return /^https?:\/\//i.test(url)?url:'';
+}
+function renderDrilldownTable(){
+  const container=$('#drilldownContent');
+  if(!container)return;
+  const data=Array.isArray(state.drillRows)?state.drillRows:[];
+  if(!data.length){container.innerHTML='<p style="color:var(--muted);padding:10px">所选日期暂无内容数据</p>';return;}
+  const pageSize=50,totalPages=Math.max(1,Math.ceil(data.length/pageSize));
+  state.drillPage=Math.min(Math.max(1,state.drillPage||1),totalPages);
+  const start=(state.drillPage-1)*pageSize;
+  const rows=data.slice(start,start+pageSize).map((d,i)=>{
+    const title=drillField(d,['title','content_title','name'])||'未命名内容';
+    const url=safeContentUrl(drillField(d,['url','content_url','link']));
+    const titleHtml=url?`<a class="clickable-link" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)} &#8599;</a>`:escapeHtml(title);
+    const account=drillField(d,['account','account_name','creator_name','author_name','creator_or_pin','creator_id'])||'—';
+    const accountHtml=account&&account!=='—'?`<button type="button" class="clickable-link" onclick="event.stopPropagation();drillToContent('creator_name','${encodeURIComponent(String(account))}')">${escapeHtml(account)}</button>`:'—';
+    const play=drillField(d,['play_count','plays','view_count','播放量']);
+    const interaction=drillField(d,['interaction_count','interactions','interaction','engagement_count','互动数']);
+    const commentBlue=drillField(d,['blue_link_count','comment_blue_link_count','comment_link_count','comment_links','评论区蓝链数']);
+    const thunderbirdBlue=drillField(d,['thunderbird_link_count','thunderbird_blue_link_count','雷鸟蓝链数']);
+    return `<tr>
+      <td>${start+i+1}</td><td class="content-title-cell" title="${escapeAttr(title)}">${titleHtml}</td><td>${accountHtml}</td>
+      <td class="num">${fmtMaybe(play)}</td><td class="num">${fmtMaybe(interaction)}</td><td class="num">${fmtMaybe(commentBlue)}</td>
+      <td class="num">${fmtMaybe(thunderbirdBlue)}</td><td>${escapeHtml(drillDate(d))}</td>
+    </tr>`;
+  }).join('');
+  container.innerHTML=`<div class="detail-scroll"><table class="creator-detail-table">
+      <thead><tr><th>#</th><th>标题</th><th>账号</th><th class="num">播放</th><th class="num">互动</th>
+        <th class="num">评论区蓝链数</th><th class="num">雷鸟蓝链数</th><th>日期</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="drilldown-pager"><span>共 ${data.length} 条 · 第 ${state.drillPage}/${totalPages} 页</span>
+      <button type="button" ${state.drillPage<=1?'disabled':''} onclick="setDrilldownPage(${state.drillPage-1})">上一页</button>
+      <button type="button" ${state.drillPage>=totalPages?'disabled':''} onclick="setDrilldownPage(${state.drillPage+1})">下一页</button></div>`;
+}
+function setDrilldownPage(page){state.drillPage=Number(page)||1;renderDrilldownTable();}
 
 async function loadDrilldownData(key,val){
   const container=$('#drilldownContent');
@@ -688,28 +799,8 @@ async function loadDrilldownData(key,val){
     const detailParam=key==='scope'?`scope=${encodeURIComponent(val)}`:key==='date'?`date=${encodeURIComponent(val)}`:`${key}=${encodeURIComponent(val)}`;
     const url=`/content-detail?${detailParam}&limit=${limit}${common}`;
     const data=await apiGet(url);
-    if(!data||!data.length){container.innerHTML='<p style="color:var(--muted);padding:10px">暂无内容数据</p>';return;}
-      // Collect clickable links during map iteration
-    let brandLinkHtml='';
-    const rows=data.slice(0,100).map((d,i)=>{
-      const creatorLink=d.creator_name?`<button type="button" class="clickable-link" onclick="event.stopPropagation();drillToContent('creator_name','${encodeURIComponent(d.creator_name)}')">${d.creator_name}</button>`:('-');
-      const detailLink=d.url?`<a class="clickable-link" href="${d.url}" target="_blank" rel="noopener">${d.title||'查看原视频'} &#8599;</a>`:(d.title||'-');
-      if(detailLink)brandLinkHtml=detailLink;
-      return `<tr>
-        <td>${i+1}</td>
-        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${d.title||''}">${detailLink}</td>
-        <td>${creatorLink}</td>
-        <td class="num">${fmt(d.play_count)}</td>
-        <td class="num">${fmt(d.interaction_count)}</td>
-        <td class="num">${fmt(d.blue_link_count)}</td>
-        <td class="num">${fmt(d.thunderbird_link_count)}</td>
-        <td>${d.date||'-'}</td>
-      </tr>`;}).join('');
-    container.innerHTML=`<div class="detail-scroll"><table class="creator-detail-table">
-          <thead><tr><th>#</th><th>标题</th><th>创作者</th><th class="num">播放</th><th class="num">互动</th>
-            <th class="num">蓝链</th><th class="num">雷鸟蓝链</th><th>日期</th></tr></thead>
-          <tbody>${rows}</tbody></table></div>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">共 ${data.length} 条记录，${brandLinkHtml||'无外部链接'}</p>`;
+    state.drillRows=Array.isArray(data)?data:[];state.drillPage=1;
+    renderDrilldownTable();
   }catch(err){
     container.innerHTML=`<p style="color:var(--red);padding:10px">加载失败: ${err.message}</p>`;
   }
@@ -1054,7 +1145,7 @@ function initCharts(){
         const idx=params[0].dataIndex;
         const item=cp[idx]||{};
         let html=`<div style="font-weight:700;margin-bottom:4px">${item.date||labels[idx]}</div>`;
-        selected.forEach(([,metric])=>{html+=`${metric.label}: <b>${fmt(metric.value(item))} ${metric.unit}</b><br>`});
+         selected.forEach(([,metric])=>{const value=metric.value(item);html+=`${metric.label}: <b>${fmtMaybe(value)} ${value==null?'':metric.unit}</b><br>`});
         return html;
       }
     },
@@ -1063,10 +1154,10 @@ function initCharts(){
     xAxis:{type:'category',data:labels,axisLine:{lineStyle:{color:'#e5e7eb'}},axisLabel:{interval:0,margin:12,color:'#667085'}},
     yAxis:{type:'value',axisLine:{show:false},axisLabel:{formatter:v=>fmt(v)},splitLine:{lineStyle:{type:'dashed',color:'#e6ebf2'}}},
     series:selected.flatMap(([,metric],index)=>{
-      const color=colors[index%colors.length],current=cp.map(metric.value),previous=pp.map(metric.value);
+       const color=colors[index%colors.length],current=cp.map(metric.value),previous=pp.map(metric.value);
       return cp.length===1?[
-        {name:`${metric.label}（本期）`,type:'bar',data:current,barMaxWidth:34,itemStyle:{color,borderRadius:[6,6,0,0]},label:{show:true,position:'top',formatter:p=>fmt(p.value),color,fontWeight:700}},
-        {name:`${metric.label}（上期）`,type:'bar',data:previous,barMaxWidth:34,itemStyle:{color,opacity:.35,borderRadius:[6,6,0,0]},label:{show:true,position:'top',formatter:p=>fmt(p.value),color:'#7a8da9'}}
+         {name:`${metric.label}（本期）`,type:'bar',data:current,barMaxWidth:34,itemStyle:{color,borderRadius:[6,6,0,0]},label:{show:true,position:'top',formatter:p=>fmtMaybe(p.value),color,fontWeight:700}},
+         {name:`${metric.label}（上期）`,type:'bar',data:previous,barMaxWidth:34,itemStyle:{color,opacity:.35,borderRadius:[6,6,0,0]},label:{show:true,position:'top',formatter:p=>fmtMaybe(p.value),color:'#7a8da9'}}
       ]:[
         {name:`${metric.label}（本期）`,type:'line',data:current,smooth:.28,symbol:'circle',symbolSize:6,lineStyle:{color,width:2.5},itemStyle:{color}},
         {name:`${metric.label}（上期）`,type:'line',data:previous,smooth:.28,symbol:'none',lineStyle:{type:'dashed',color,width:1.5,opacity:.5}}
@@ -1078,12 +1169,14 @@ function initCharts(){
   // Chart point click → drill into that date's content
   curveChartInstance.on('click',(params)=>{
     if(!params||params.dataIndex==null)return;
-    const item=cp[params.dataIndex];
-    if(!item||!item.date)return;
-    state.drillFilter={type:'date',value:item.date,dateKey:item.date};
-    renderApp();
-    // Load content for that date via daily detail
-    loadDrilldownData('date',item.date);
+     const item=cp[params.dataIndex]||{};
+     const date=item.date||params.axisValue;
+     if(!date)return;
+     state.drillFilter={type:'date',value:date,dateKey:date};
+     state.drillRows=[];state.drillPage=1;
+     renderApp();
+     // Load content for that date via daily detail
+     loadDrilldownData('date',date);
     setTimeout(()=>{const el=$('#drilldownSection');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})},100);
   });
 }

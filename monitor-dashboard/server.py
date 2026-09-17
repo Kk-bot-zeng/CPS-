@@ -55,6 +55,18 @@ class DataLoader:
         self._content_cache_mtimes: tuple[float, float, float] | None = None
         self._traffic_cache: list[dict] = []
         self._traffic_mtime: float = -1
+        # These files are part of the display-monitor data package but are not
+        # in the older config.py.  Keep the paths local to this loader so the
+        # package remains portable and callers can still override DATA_DIR in
+        # a test/development environment.
+        self.trade_path = os.path.join(config.DATA_DIR, "normalized", "jdsz_ffalcon_trade_daily.csv")
+        self.order_facts_path = os.path.join(config.DATA_DIR, "normalized", "jd_order_facts.csv")
+        self._trade_cache: list[dict] = []
+        self._trade_mtime: float = -1
+        self._order_cache: list[dict] = []
+        self._order_mtime: float = -1
+        self._order_amount_field: Optional[str] = None
+        self._order_click_field: Optional[str] = None
 
     @staticmethod
     def _investment_date(value: Any) -> Optional[date]:
@@ -120,6 +132,13 @@ class DataLoader:
     def _resolve_period(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
                         days: int = 7) -> tuple[date, date]:
         daily_dates = [self._date(d.get("date")) for d in self.get_report().get("daily", [])]
+        # A fresh import may have content/traffic facts before the report
+        # snapshot is regenerated.  Use those dates as a safe fallback so an
+        # exact-day drill-down does not silently resolve against today's date.
+        if not any(daily_dates):
+            daily_dates.extend(self._date(row.get("published_at") or row.get("date"))
+                               for row in self._content_catalog())
+            daily_dates.extend(self._date(row.get("traffic_date")) for row in self._traffic_daily())
         available = [d for d in daily_dates if d]
         default_end = max(available) if available else datetime.now().date()
         end = self._date(end_date) or default_end
@@ -165,6 +184,135 @@ class DataLoader:
             self._traffic_mtime = mtime
         return self._traffic_cache
 
+    def _trade_daily(self) -> list[dict]:
+        """Return the verified JD shop transaction source, if available.
+
+        This is the full-store (京准通) amount source.  It is deliberately
+        kept separate from alliance commission/order facts: neither one is a
+        safe substitute for the other.
+        """
+        path = self.trade_path
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return []
+        if mtime != self._trade_mtime:
+            with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+                self._trade_cache = list(csv.DictReader(handle))
+            self._trade_mtime = mtime
+        return self._trade_cache
+
+    def _order_facts(self) -> list[dict]:
+        """Load order facts and detect real order-amount/click fields.
+
+        The normalized hand-off file currently has ``actual_paid_amount`` but
+        most rows are blank and has no click column.  Detect fields rather
+        than silently treating a missing field as zero, so KPI consumers can
+        distinguish a real zero from an unavailable metric.
+        """
+        path = self.order_facts_path
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            self._order_cache = []
+            self._order_amount_field = None
+            self._order_click_field = None
+            return []
+        if mtime == self._order_mtime:
+            return self._order_cache
+        with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        amount_candidates = (
+            "jd_order_amount", "order_amount", "transaction_amount",
+            "actual_paid_amount", "actual_pay_amount", "payment_amount",
+            # The current JD alliance export names its commissionable order
+            # value ``commission_amount`` (计佣金额).  Its per-order values are
+            # product-price sized; it is not the commission fee itself.
+            "commission_amount",
+        )
+        click_candidates = (
+            "jd_clicks", "jd_click_count", "alliance_clicks",
+            "jd_alliance_clicks", "click_count", "clicks",
+        )
+        self._order_amount_field = next(
+            (key for key in amount_candidates if any(str(row.get(key) or "").strip() for row in rows)),
+            None,
+        )
+        self._order_click_field = next(
+            (key for key in click_candidates if any(str(row.get(key) or "").strip() for row in rows)),
+            None,
+        )
+        self._order_cache = rows
+        self._order_mtime = mtime
+        return rows
+
+    @staticmethod
+    def _normalise_category(value: Any) -> str:
+        text = str(value or "").strip().casefold()
+        if text in {"monitor", "display", "显示器", "显示器品类", "monitor-dashboard"}:
+            return "monitor"
+        if text in {"tv", "television", "电视", "电视品类"}:
+            return "tv"
+        return text or "monitor"
+
+    @classmethod
+    def _row_category(cls, row: dict) -> str:
+        for key in ("category", "product_category", "business_category", "品类", "keyword"):
+            value = row.get(key)
+            if value not in (None, ""):
+                return cls._normalise_category(value)
+        # This package is the independent B站显示器 monitor.  Rows without a
+        # category column belong to this package, not to the TV dashboard.
+        return "monitor"
+
+    @classmethod
+    def _category_matches(cls, row: dict, category: Optional[str]) -> bool:
+        target = cls._normalise_category(category)
+        return cls._row_category(row) == target
+
+    @staticmethod
+    def _field_stats(rows: list[dict], keys: tuple[str, ...]) -> tuple[Optional[str], float, int]:
+        """Choose the first source field with at least one non-empty value.
+
+        Return ``(field, sum, populated_rows)``.  A missing field is not the
+        same as a populated field whose value happens to be zero.
+        """
+        for key in keys:
+            values = [row.get(key) for row in rows if key in row and row.get(key) not in (None, "")]
+            if values:
+                return key, sum(_num(value) for value in values), len(values)
+        return None, 0.0, 0
+
+    def _order_daily_metric(self, key: str, start: date, end: date) -> dict[str, dict]:
+        """Aggregate a real order-fact field by order date.
+
+        Invalid rows are not counted.  If the selected field has no populated
+        values the returned mapping is empty, allowing callers to expose an
+        explicit ``unavailable`` status.
+        """
+        rows = self._order_facts()
+        field = self._order_amount_field if key == "amount" else self._order_click_field
+        if not field:
+            return {}
+        result: dict[str, dict] = {}
+        for row in rows:
+            raw_date = row.get("order_date") or row.get("complete_date")
+            row_date = self._date(raw_date)
+            if not row_date or not (start <= row_date <= end):
+                continue
+            validity = str(row.get("is_valid") or "").strip().casefold()
+            status = str(row.get("order_status") or "").strip().casefold()
+            if validity in {"无效", "invalid", "false", "0", "否"}:
+                continue
+            if status in {"已退款", "退款", "失效", "invalid", "cancelled", "取消"}:
+                continue
+            value = row.get(field)
+            if value in (None, ""):
+                continue
+            item = result.setdefault(row_date.isoformat(), {"date": row_date.isoformat(), key: 0.0})
+            item[key] += _num(value)
+        return result
+
     @staticmethod
     def _sum(rows: list[dict], key: str) -> float:
         return sum(_num(row.get(key, 0)) for row in rows)
@@ -185,37 +333,55 @@ class DataLoader:
             return self._content_cache
 
         catalog: dict[str, dict] = {}
+        link_facts_available = os.path.exists(config.LINK_FACTS_PATH)
+
+        def new_entry(content_id: str) -> dict:
+            return {
+                "content_id": content_id,
+                "title": "[视频内容]",
+                "url": "",
+                "creator_id": "",
+                "creator_name": "",
+                "date": "",
+                "category": "monitor",
+                "play_count": None,
+                "interaction_count": None,
+                "blue_link_count": 0 if link_facts_available else None,
+                "comment_blue_link_count": 0 if link_facts_available else None,
+                "thunderbird_link_count": 0 if link_facts_available else None,
+                "brands": set(),
+                "brand_link_counts": defaultdict(int),
+                "metric_data_status": "unavailable",
+                "link_data_status": "ready" if link_facts_available else "unavailable",
+            }
+
         ranked = self.get_report().get("overview_rankings", {}).get("content", {}).get("rows", []) or []
         for row in ranked:
             content_id = str(row.get("content_id") or "")
             if not content_id:
                 continue
-            catalog[content_id] = {
-                "content_id": content_id,
-                "title": row.get("title") or "[视频内容]",
-                "url": row.get("content_url") or "",
-                "creator_id": str(row.get("author_uid") or ""),
-                "creator_name": row.get("author_name") or "",
-                "date": str(row.get("published_date") or "")[:10],
-                "play_count": int(_num(row.get("play_count"))),
-                "interaction_count": int(_num(row.get("interaction_count"))),
-                "blue_link_count": 0,
-                "thunderbird_link_count": 0,
-                "brands": set(),
-                "brand_link_counts": defaultdict(int),
-            }
+            entry = catalog.setdefault(content_id, new_entry(content_id))
+            entry.update({
+                "title": row.get("title") or entry["title"],
+                "url": row.get("content_url") or entry["url"],
+                "creator_id": str(row.get("author_uid") or entry["creator_id"]),
+                "creator_name": row.get("author_name") or entry["creator_name"],
+                "date": str(row.get("published_date") or entry["date"])[:10],
+            })
+            if row.get("category") or row.get("product_category"):
+                entry["category"] = self._row_category(row)
+            for metric in ("play_count", "interaction_count"):
+                if row.get(metric) not in (None, ""):
+                    entry[metric] = int(_num(row.get(metric)))
+            if any(row.get(metric) not in (None, "") for metric in ("play_count", "interaction_count")):
+                entry["metric_data_status"] = "ready"
         if os.path.exists(config.CONTENT_FACTS_PATH):
             with open(config.CONTENT_FACTS_PATH, "r", encoding="utf-8-sig", newline="") as handle:
                 for row in csv.DictReader(handle):
                     content_id = str(row.get("content_id") or "")
                     if not content_id:
                         continue
-                    entry = catalog.setdefault(content_id, {
-                        "content_id": content_id, "title": "[视频内容]", "url": "", "creator_id": "",
-                        "creator_name": "", "date": "", "play_count": 0, "interaction_count": 0,
-                        "blue_link_count": 0, "thunderbird_link_count": 0, "brands": set(),
-                        "brand_link_counts": defaultdict(int),
-                    })
+                    entry = catalog.setdefault(content_id, new_entry(content_id))
                     entry.update({
                         "title": row.get("title") or entry["title"],
                         "url": row.get("content_url") or entry["url"],
@@ -223,32 +389,62 @@ class DataLoader:
                         "creator_name": row.get("author_name") or entry["creator_name"],
                         "date": str(row.get("published_at") or entry["date"])[:10],
                     })
+                    if row.get("category") or row.get("product_category") or row.get("keyword"):
+                        entry["category"] = self._row_category(row)
+                    for metric in ("play_count", "interaction_count"):
+                        if row.get(metric) not in (None, ""):
+                            entry[metric] = int(_num(row.get(metric)))
+                    if any(row.get(metric) not in (None, "") for metric in ("play_count", "interaction_count")):
+                        entry["metric_data_status"] = "ready"
         if os.path.exists(config.LINK_FACTS_PATH):
             with open(config.LINK_FACTS_PATH, "r", encoding="utf-8-sig", newline="") as handle:
                 for row in csv.DictReader(handle):
                     content_id = str(row.get("content_id") or "")
                     if not content_id:
                         continue
-                    entry = catalog.setdefault(content_id, {
-                        "content_id": content_id, "title": "[视频内容]", "url": "", "creator_id": "",
-                        "creator_name": "", "date": "", "play_count": 0, "interaction_count": 0,
-                        "blue_link_count": 0, "thunderbird_link_count": 0, "brands": set(),
-                        "brand_link_counts": defaultdict(int),
-                    })
+                    entry = catalog.setdefault(content_id, new_entry(content_id))
                     entry["blue_link_count"] += 1
+                    entry["comment_blue_link_count"] += 1
                     brand = str(row.get("brand") or "").strip()
                     if brand:
                         entry["brands"].add(brand)
                         entry.setdefault("brand_link_counts", defaultdict(int))[brand] += 1
-                    if brand == "雷鸟":
+                    if brand.casefold() in {"雷鸟", "ffalcon", "雷鸟电视"}:
                         entry["thunderbird_link_count"] += 1
+                    # Link facts also carry the author/title/date in some
+                    # exports.  Fill gaps, but never overwrite the canonical
+                    # content-facts publication metadata.
+                    entry["creator_id"] = entry["creator_id"] or str(row.get("author_uid") or "")
+                    entry["creator_name"] = entry["creator_name"] or row.get("author_name") or ""
+                    entry["date"] = entry["date"] or str(row.get("published_at") or "")[:10]
+        # The complete report snapshot contains daily top-content metrics as a
+        # fallback for an export where the normalized content facts omit them.
+        # It is not used as a source of link counts because that section is
+        # intentionally limited to a small top-N sample.
+        for day_rows in (self.get_report().get("daily_content_top", {}) or {}).values():
+            if not isinstance(day_rows, list):
+                continue
+            for row in day_rows:
+                content_id = str(row.get("content_id") or "")
+                if not content_id:
+                    continue
+                entry = catalog.setdefault(content_id, new_entry(content_id))
+                for key in ("title", "content_url", "author_uid", "author_name"):
+                    value = row.get(key)
+                    target = {"content_url": "url", "author_uid": "creator_id", "author_name": "creator_name"}.get(key, key)
+                    if value not in (None, "") and not entry.get(target):
+                        entry[target] = str(value)
+                for metric in ("play_count", "interaction_count"):
+                    if entry.get(metric) is None and row.get(metric) not in (None, ""):
+                        entry[metric] = int(_num(row.get(metric)))
+                        entry["metric_data_status"] = "ready"
         self._content_cache = list(catalog.values())
         self._content_cache_mtimes = mtimes
         return self._content_cache
 
     def _filter_content(self, start: date, end: date, scope: str = "all", brand: Optional[str] = None,
                         creator_name: Optional[str] = None, creator_id: Optional[str] = None,
-                        exact_date: Optional[str] = None) -> list[dict]:
+                        exact_date: Optional[str] = None, category: Optional[str] = "monitor") -> list[dict]:
         target_date = self._date(exact_date) if exact_date else None
         # Accept both current callers and stale cached pages that URL-encoded a
         # Chinese brand/creator before fetch encoded it a second time.
@@ -257,6 +453,8 @@ class DataLoader:
         creator_id = unquote(unquote(creator_id)).strip() if creator_id else None
         result = []
         for row in self._content_catalog():
+            if not self._category_matches(row, category):
+                continue
             row_date = self._date(row.get("date"))
             if not row_date or not (start <= row_date <= end):
                 continue
@@ -534,85 +732,215 @@ class DataLoader:
         return self._period_daily(start, end), self._period_daily(previous_start, previous_end)
 
     def get_kpi_cards(self, days: int = 7, start_date: Optional[str] = None,
-                      end_date: Optional[str] = None) -> dict:
+                      end_date: Optional[str] = None, category: Optional[str] = "monitor") -> dict:
+        """Return the seven dashboard KPI cards with explicit source status.
+
+        The monitor dashboard is display-only.  Content/link/play cards expose
+        Thunderbird versus full monitored values; traffic is search visitors
+        versus all-store visitors; store sales is the verified 京准通 amount.
+        Alliance clicks and alliance order amount are returned only when a
+        matching source field exists.  Commission and order quantity are not
+        silently relabelled as either metric.
+        """
+        if self._normalise_category(category) != "monitor":
+            start, end = self._resolve_period(start_date, end_date, days=days)
+            period_start, period_end = self._period_label(start, end)
+            unavailable = {
+                "data_status": "unavailable",
+                "data_message": "当前看板仅接入显示器品类，未接入电视品类数据源",
+            }
+            cards = [
+                {"key": "content_count", "label": "内容数", "unit": "条", **unavailable},
+                {"key": "link_count", "label": "蓝链数", "unit": "个", **unavailable},
+                {"key": "play_count", "label": "播放量", "unit": "次", **unavailable},
+                {"key": "store_traffic", "label": "店铺流量", "unit": "人", **unavailable},
+                {"key": "store_sales", "label": "店铺销售", "unit": "元", **unavailable},
+                {"key": "jd_clicks", "label": "京东联盟点击", "unit": "次", **unavailable},
+                {"key": "jd_amount", "label": "京东联盟订单金额", "unit": "元", **unavailable},
+            ]
+            return {"cards": cards, "period_start": period_start, "period_end": period_end,
+                    "previous_period_start": self._previous_period(start, end)[0].isoformat(),
+                    "previous_period_end": self._previous_period(start, end)[1].isoformat(),
+                    "category": "tv", "category_data_status": "unavailable"}
+
         start, end = self._resolve_period(start_date, end_date, days=days)
         current, previous = self._daily_periods(days, start.isoformat(), end.isoformat())
-        cur_sum = lambda key: sum(_num(d.get(key, 0)) for d in current)
-        prev_sum = lambda key: sum(_num(d.get(key, 0)) for d in previous)
+        previous_start, previous_end = self._previous_period(start, end)
 
-        def ratio(cur, tot):
-            return (cur / tot * 100) if tot else 0.0
+        def stats(rows: list[dict], keys: tuple[str, ...]) -> tuple[Optional[str], Optional[float], int, int]:
+            field, value, populated = self._field_stats(rows, keys)
+            return field, (value if field else None), populated, len(rows)
 
-        def yoy(cur_r, prev_r):
-            if prev_r:
-                chg = (cur_r - prev_r) / abs(prev_r) * 100
-            else:
-                chg = cur_r if cur_r else 0.0
-            return round(chg, 2), ("↑" if chg >= 0 else "↓")
+        def ratio(numerator: Optional[float], denominator: Optional[float]) -> Optional[float]:
+            if numerator is None or denominator in (None, 0):
+                return None
+            return round(numerator / denominator * 100, 2)
 
-        specs = []
+        def change(current_ratio: Optional[float], previous_ratio: Optional[float]) -> tuple[Optional[float], Optional[str]]:
+            if current_ratio is None or previous_ratio in (None, 0):
+                return None, None
+            delta = round((current_ratio - previous_ratio) / abs(previous_ratio) * 100, 2)
+            return delta, ("↑" if delta >= 0 else "↓")
 
-        # Every numerator and denominator is derived from the selected period.
-        # The previous implementation mixed a report-wide overview total with
-        # a period-limited previous value, producing a misleading comparison.
-        c_cur = cur_sum("thunderbird_linked_content_count")
-        c_tot = cur_sum("all_monitored_content_count")
-        p_cur = prev_sum("thunderbird_linked_content_count")
-        p_tot = prev_sum("all_monitored_content_count")
-        chg, direction = yoy(ratio(c_cur, c_tot), ratio(p_cur, p_tot))
-        specs.append({"key": "content_count", "label": "内容数", "current_value": round(c_cur), "total_value": round(c_tot),
-                      "ratio": round(ratio(c_cur, c_tot), 2), "prev_period_value": round(p_cur),
-                      "prev_ratio": round(ratio(p_cur, p_tot), 2), "yoy_change_pct": chg, "yoy_direction": direction,
-                      "unit": "条", "click_count": round(c_cur), "detail_scope": "thunderbird", "data_status": "ready"})
+        def pair_card(key: str, label: str, numerator_keys: tuple[str, ...], denominator_keys: tuple[str, ...],
+                      unit: str, note: str, detail_scope: Optional[str] = None) -> dict:
+            cur_field, cur_value, cur_populated, cur_rows = stats(current, numerator_keys)
+            total_field, total_value, total_populated, total_rows = stats(current, denominator_keys)
+            prev_field, prev_value, prev_populated, prev_rows = stats(previous, numerator_keys)
+            prev_total_field, prev_total_value, prev_total_populated, _ = stats(previous, denominator_keys)
+            current_ratio = ratio(cur_value, total_value)
+            previous_ratio = ratio(prev_value, prev_total_value)
+            delta, direction = change(current_ratio, previous_ratio)
+            status = "ready" if cur_field and total_field else ("partial" if cur_field or total_field else "unavailable")
+            message = ""
+            if status == "unavailable":
+                message = f"所选周期未找到{label}数据源字段"
+            elif status == "partial":
+                missing = "分子" if not cur_field else "分母"
+                message = f"已接入{label}{missing}，另一侧数据源缺失，未计算占比"
+            card = {
+                "key": key, "label": label, "unit": unit,
+                "current_value": round(cur_value, 2) if cur_value is not None else None,
+                "total_value": round(total_value, 2) if total_value is not None else None,
+                "numerator_value": round(cur_value, 2) if cur_value is not None else None,
+                "denominator_value": round(total_value, 2) if total_value is not None else None,
+                "prev_period_value": round(prev_value, 2) if prev_value is not None else None,
+                "ratio": current_ratio, "prev_ratio": previous_ratio,
+                "yoy_change_pct": delta, "yoy_direction": direction,
+                "click_count": round(cur_value) if cur_value is not None else None,
+                "detail_scope": detail_scope, "data_status": status,
+                "data_message": message,
+                "metric_note": note,
+                "source_fields": {"numerator": cur_field, "denominator": total_field},
+                "period_data_coverage": {"current": f"{cur_populated}/{cur_rows}",
+                                          "previous": f"{prev_populated}/{prev_rows}"},
+            }
+            return card
 
-        c_cur = cur_sum("thunderbird_link_count")
-        c_tot = cur_sum("total_blue_link_count")
-        p_cur = prev_sum("thunderbird_link_count")
-        p_tot = prev_sum("total_blue_link_count")
-        chg, direction = yoy(ratio(c_cur, c_tot), ratio(p_cur, p_tot))
-        specs.append({"key": "link_count", "label": "蓝链数", "current_value": round(c_cur), "total_value": round(c_tot),
-                      "ratio": round(ratio(c_cur, c_tot), 2), "prev_period_value": round(p_cur),
-                      "prev_ratio": round(ratio(p_cur, p_tot), 2), "yoy_change_pct": chg, "yoy_direction": direction,
-                      "unit": "个", "click_count": round(c_cur), "detail_scope": "thunderbird", "data_status": "ready"})
+        specs = [
+            pair_card("content_count", "内容数", ("thunderbird_linked_content_count",),
+                      ("all_monitored_content_count",), "条", "雷鸟品牌内容数 / 全量内容数", "thunderbird"),
+            pair_card("link_count", "蓝链数", ("thunderbird_link_count",),
+                      ("total_blue_link_count",), "个", "雷鸟蓝链数 / 全量蓝链数", "thunderbird"),
+            pair_card("play_count", "播放量", ("thunderbird_play_count", "play_count"),
+                      ("all_monitored_play_count",), "次", "雷鸟相关播放 / 全量播放", "thunderbird"),
+            pair_card("store_traffic", "店铺流量", ("search_visitors",),
+                      ("total_visitors",), "人", "搜索流量 / 全店流量"),
+        ]
 
-        # Keep the operational overview usable with the fields that
-        # are currently available.  Each card declares its exact source metric
-        # so consumers do not mistake these values for unavailable GMV/UV data.
-        for key, label, numerator_key, denominator_key, unit, metric_note in [
-            ("play_count", "播放量", "play_count", "all_monitored_play_count", "次", "雷鸟相关播放/行业监测播放"),
-            ("jd_orders", "京东联盟订单", "sales_quantity", "jdsz_transaction_item_quantity", "单", "联盟有效销量/京准通成交商品件数"),
-            ("jd_amount", "京东联盟佣金", "commission_amount", "jdsz_transaction_amount", "元", "联盟佣金/京准通成交金额"),
-        ]:
-            c_cur, c_tot = cur_sum(numerator_key), cur_sum(denominator_key)
-            p_cur, p_tot = prev_sum(numerator_key), prev_sum(denominator_key)
-            chg, direction = yoy(ratio(c_cur, c_tot), ratio(p_cur, p_tot))
-            specs.append({"key": key, "label": label, "current_value": round(c_cur, 2),
-                          "total_value": round(c_tot, 2), "ratio": round(ratio(c_cur, c_tot), 2),
-                          "prev_period_value": round(p_cur, 2), "prev_ratio": round(ratio(p_cur, p_tot), 2),
-                          "yoy_change_pct": chg, "yoy_direction": direction, "unit": unit,
-                          "click_count": round(c_cur), "detail_scope": "all", "data_status": "ready",
-                          "metric_note": metric_note})
+        # Store sales comes from the full-store 京准通 transaction amount.
+        # Prefer the daily report field, then the normalized daily trade file.
+        def trade_rows(period_start: date, period_end: date) -> list[dict]:
+            result = []
+            for row in self._trade_daily():
+                row_date = self._date(row.get("trade_date"))
+                if row_date and period_start <= row_date <= period_end:
+                    result.append({"date": row_date.isoformat(),
+                                   "jdsz_transaction_amount": row.get("transaction_amount")})
+            return result
 
-        # User-defined key-source traffic: search visitors plus off-site
-        # visitors, divided by all-site visitors. Search is a subset of indoor
-        # traffic, so this is intentionally presented as a focus-source share,
-        # not as JD's original total-traffic composition.
-        c_cur = cur_sum("search_visitors") + cur_sum("outdoor_visitors")
-        c_tot = cur_sum("total_visitors")
-        p_cur = prev_sum("search_visitors") + prev_sum("outdoor_visitors")
-        p_tot = prev_sum("total_visitors")
-        chg, direction = yoy(ratio(c_cur, c_tot), ratio(p_cur, p_tot))
-        specs.insert(3, {"key": "store_traffic", "label": "店铺流量", "current_value": round(c_cur, 2),
-                         "total_value": round(c_tot, 2), "ratio": round(ratio(c_cur, c_tot), 2),
-                         "prev_period_value": round(p_cur, 2), "prev_ratio": round(ratio(p_cur, p_tot), 2),
-                         "yoy_change_pct": chg, "yoy_direction": direction, "unit": "人",
-                         "click_count": round(c_cur), "detail_scope": "all", "data_status": "ready",
-                         "metric_note": "搜索流量+站外流量/全站流量", "accent": "traffic"})
+        current_sales_rows = current
+        previous_sales_rows = previous
+        sales_field, sales_value, sales_populated, sales_total_rows = stats(
+            current_sales_rows, ("jdsz_transaction_amount", "store_sales", "sales_amount", "store_sales_amount"))
+        prev_sales_field, prev_sales_value, prev_sales_populated, prev_sales_rows_count = stats(
+            previous_sales_rows, ("jdsz_transaction_amount", "store_sales", "sales_amount", "store_sales_amount"))
+        if not sales_field:
+            sales_field, sales_value, sales_populated, sales_total_rows = stats(
+                trade_rows(start, end), ("jdsz_transaction_amount",))
+        if not prev_sales_field:
+            prev_sales_field, prev_sales_value, prev_sales_populated, prev_sales_rows_count = stats(
+                trade_rows(previous_start, previous_end), ("jdsz_transaction_amount",))
+        sales_delta = None
+        sales_direction = None
+        if sales_value is not None and prev_sales_value is not None and prev_sales_value != 0:
+            sales_delta = round((sales_value - prev_sales_value) / abs(prev_sales_value) * 100, 2)
+            sales_direction = "↑" if sales_delta >= 0 else "↓"
+        specs.append({
+            "key": "store_sales", "label": "店铺销售", "unit": "元",
+            "current_value": round(sales_value, 2) if sales_value is not None else None,
+            "total_value": None, "prev_period_value": round(prev_sales_value, 2) if prev_sales_value is not None else None,
+            "ratio": None, "prev_ratio": None, "yoy_change_pct": sales_delta,
+            "yoy_direction": sales_direction, "click_count": None, "detail_scope": None,
+            "data_status": "ready" if sales_field else "unavailable",
+            "data_message": "" if sales_field else "未找到京准通店铺成交金额字段",
+            "metric_note": "京准通全店成交金额（jdsz_transaction_amount）",
+            "source_fields": {"value": sales_field},
+            "period_data_coverage": {"current": f"{sales_populated}/{sales_total_rows}",
+                                      "previous": f"{prev_sales_populated}/{prev_sales_rows_count}"},
+        })
+
+        # Alliance clicks must have a dedicated click field.  Do not use order
+        # quantities, sales, or commission as a proxy.
+        def fact_rows(period_start: date, period_end: date, metric: str) -> list[dict]:
+            by_date = self._order_daily_metric(metric, period_start, period_end)
+            return list(by_date.values())
+
+        click_field, click_value, click_populated, click_rows = stats(
+            current, ("jd_clicks", "jd_click_count", "alliance_clicks", "jd_alliance_clicks"))
+        prev_click_field, prev_click_value, prev_click_populated, prev_click_rows = stats(
+            previous, ("jd_clicks", "jd_click_count", "alliance_clicks", "jd_alliance_clicks"))
+        if not click_field:
+            click_field, click_value, click_populated, click_rows = stats(
+                fact_rows(start, end, "clicks"), ("clicks",))
+        if not prev_click_field:
+            prev_click_field, prev_click_value, prev_click_populated, prev_click_rows = stats(
+                fact_rows(previous_start, previous_end, "clicks"), ("clicks",))
+        click_delta = None
+        click_direction = None
+        if click_value is not None and prev_click_value is not None and prev_click_value != 0:
+            click_delta = round((click_value - prev_click_value) / abs(prev_click_value) * 100, 2)
+            click_direction = "↑" if click_delta >= 0 else "↓"
+        specs.append({
+            "key": "jd_clicks", "label": "京东联盟点击", "unit": "次",
+            "current_value": round(click_value, 2) if click_value is not None else None,
+            "total_value": None, "prev_period_value": round(prev_click_value, 2) if prev_click_value is not None else None,
+            "ratio": None, "prev_ratio": None, "yoy_change_pct": click_delta,
+            "yoy_direction": click_direction, "click_count": None, "detail_scope": None,
+            "data_status": "ready" if click_field else "unavailable",
+            "data_message": "" if click_field else "当前数据源未提供京东联盟点击字段",
+            "metric_note": "京东联盟专用点击字段；未以订单数替代",
+            "source_fields": {"value": click_field},
+            "period_data_coverage": {"current": f"{click_populated}/{click_rows}",
+                                      "previous": f"{prev_click_populated}/{prev_click_rows}"},
+        })
+
+        # Alliance order amount is an order-source metric.  Commission and
+        # 京准通 store transaction amount are intentionally not substituted.
+        amount_field, amount_value, amount_populated, amount_rows = stats(
+            current, ("jd_order_amount", "order_amount", "actual_paid_amount"))
+        prev_amount_field, prev_amount_value, prev_amount_populated, prev_amount_rows = stats(
+            previous, ("jd_order_amount", "order_amount", "actual_paid_amount"))
+        if not amount_field:
+            amount_rows_data = fact_rows(start, end, "amount")
+            amount_field, amount_value, amount_populated, amount_rows = stats(amount_rows_data, ("amount",))
+        if not prev_amount_field:
+            prev_amount_rows_data = fact_rows(previous_start, previous_end, "amount")
+            prev_amount_field, prev_amount_value, prev_amount_populated, prev_amount_rows = stats(prev_amount_rows_data, ("amount",))
+        amount_delta = None
+        amount_direction = None
+        if amount_value is not None and prev_amount_value is not None and prev_amount_value != 0:
+            amount_delta = round((amount_value - prev_amount_value) / abs(prev_amount_value) * 100, 2)
+            amount_direction = "↑" if amount_delta >= 0 else "↓"
+        specs.append({
+            "key": "jd_amount", "label": "京东联盟订单金额", "unit": "元",
+            "current_value": round(amount_value, 2) if amount_value is not None else None,
+            "total_value": None, "prev_period_value": round(prev_amount_value, 2) if prev_amount_value is not None else None,
+            "ratio": None, "prev_ratio": None, "yoy_change_pct": amount_delta,
+            "yoy_direction": amount_direction, "click_count": None, "detail_scope": None,
+            "data_status": "ready" if amount_field else "unavailable",
+            "data_message": "" if amount_field else "订单源未提供可用的京东联盟订单金额（actual_paid_amount为空）",
+            "metric_note": "京东联盟订单源金额（优先实付金额，兼容计佣金额口径）",
+            "source_fields": {"value": amount_field},
+            "period_data_coverage": {"current": f"{amount_populated}/{amount_rows}",
+                                      "previous": f"{prev_amount_populated}/{prev_amount_rows}"},
+        })
 
         period_start, period_end = self._period_label(start, end)
         return {"cards": specs, "period_start": period_start, "period_end": period_end,
-                "previous_period_start": self._previous_period(start, end)[0].isoformat(),
-                "previous_period_end": self._previous_period(start, end)[1].isoformat()}
+                "previous_period_start": previous_start.isoformat(),
+                "previous_period_end": previous_end.isoformat(), "category": "monitor",
+                "category_data_status": "ready"}
 
     def _top_content_lookup(self) -> dict:
         lookup = {}
@@ -643,14 +971,51 @@ class DataLoader:
     def get_content_detail(self, brand: Optional[str] = None, creator_name: Optional[str] = None,
                            creator_id: Optional[str] = None, start_date: Optional[str] = None,
                            end_date: Optional[str] = None, exact_date: Optional[str] = None,
-                           scope: str = "all", limit: int = 50) -> list:
-        start, end = self._resolve_period(start_date, end_date)
+                           scope: str = "all", limit: int = 50,
+                           category: Optional[str] = "monitor") -> list:
+        # A date-point drill-down is a complete date filter by itself.  Do not
+        # let the default last-7-day period discard a requested historical day.
+        if exact_date and not start_date and not end_date:
+            target = self._date(exact_date)
+            if target:
+                start = end = target
+            else:
+                start, end = self._resolve_period(start_date, end_date)
+        else:
+            start, end = self._resolve_period(start_date, end_date)
         rows = self._filter_content(start, end, scope=scope, brand=brand, creator_name=creator_name,
-                                    creator_id=creator_id, exact_date=exact_date)
-        rows.sort(key=lambda row: row["play_count"], reverse=True)
-        return [{key: (sorted(value) if key == "brands" else value) for key, value in row.items()
-                 if key != "brand_link_counts"}
-                for row in rows[:limit]]
+                                    creator_id=creator_id, exact_date=exact_date, category=category)
+        rows.sort(key=lambda row: _num(row.get("play_count")), reverse=True)
+
+        def serialise(row: dict) -> dict:
+            creator_name_value = row.get("creator_name") or ""
+            blue = row.get("blue_link_count")
+            thunderbird_blue = row.get("thunderbird_link_count")
+            return {
+                # Stable canonical fields used by the drill-down table.
+                "content_id": row.get("content_id") or "",
+                "title": row.get("title") or "[视频内容]",
+                "url": row.get("url") or "",
+                "creator_id": row.get("creator_id") or "",
+                "creator_name": creator_name_value,
+                "account": creator_name_value,
+                "author_uid": row.get("creator_id") or "",
+                "author_name": creator_name_value,
+                "play_count": row.get("play_count"),
+                "interaction_count": row.get("interaction_count"),
+                "blue_link_count": blue,
+                "comment_blue_link_count": row.get("comment_blue_link_count", blue),
+                "thunderbird_link_count": thunderbird_blue,
+                "thunderbird_comment_blue_link_count": thunderbird_blue,
+                "date": row.get("date") or "",
+                "published_date": row.get("date") or "",
+                "category": self._row_category(row),
+                "brands": sorted(row.get("brands", set())),
+                "metric_data_status": row.get("metric_data_status", "unavailable"),
+                "link_data_status": row.get("link_data_status", "unavailable"),
+            }
+
+        return [serialise(row) for row in rows[:limit]]
 
     def get_creator_detail(self, creator_name: str, start_date: Optional[str] = None,
                            end_date: Optional[str] = None) -> list:
@@ -662,13 +1027,44 @@ class DataLoader:
     def get_daily_with_period(self, days: int = 7, start_date: Optional[str] = None,
                               end_date: Optional[str] = None) -> dict:
         current, previous = self._daily_periods(days, start_date, end_date)
+        def enrich(items: list[dict]) -> list[dict]:
+            if not items:
+                return items
+            dates = [self._date(row.get("date")) for row in items if self._date(row.get("date"))]
+            if not dates:
+                return items
+            start, end = min(dates), max(dates)
+            trade_by_date = {row.get("date"): row for row in self._trade_daily()
+                             if self._date(row.get("trade_date")) and start <= self._date(row.get("trade_date")) <= end
+                             for row in [{"date": self._date(row.get("trade_date")).isoformat(),
+                                          "store_sales": row.get("transaction_amount")}]}
+            amount_by_date = self._order_daily_metric("amount", start, end)
+            click_by_date = self._order_daily_metric("clicks", start, end)
+            for row in items:
+                key = str(row.get("date") or "")[:10]
+                if row.get("store_sales") in (None, ""):
+                    if row.get("jdsz_transaction_amount") not in (None, ""):
+                        row["store_sales"] = row.get("jdsz_transaction_amount")
+                    elif key in trade_by_date:
+                        row["store_sales"] = trade_by_date[key].get("store_sales")
+                if key in amount_by_date and row.get("jd_amount") in (None, ""):
+                    row["jd_amount"] = amount_by_date[key].get("amount")
+                if key in click_by_date and row.get("jd_clicks") in (None, ""):
+                    row["jd_clicks"] = click_by_date[key].get("clicks")
+            return items
+
+        current = enrich(current)
+        previous = enrich(previous)
         keys = ["date", "new_content", "thunderbird_linked_content_count", "all_monitored_content_count",
                 "thunderbird_link_count", "total_blue_link_count", "sales_quantity", "commission_amount",
                 "play_count", "all_monitored_play_count", "jdsz_transaction_item_quantity",
-                "jdsz_transaction_amount", "search_visitors", "outdoor_visitors", "total_visitors"]
+                "jdsz_transaction_amount", "store_sales", "jd_clicks", "jd_amount",
+                "search_visitors", "outdoor_visitors", "total_visitors"]
 
         def clean(items):
-            return [{k: d.get(k, 0) for k in keys} for d in items]
+            # Keep absent fields as null.  Zero is a valid reported value but
+            # must not be invented for an unconnected source.
+            return [{k: d.get(k) if k in d else None for k in keys} for d in items]
 
         return {"current_period": clean(current), "previous_period": clean(previous)}
 
@@ -887,18 +1283,18 @@ def api_today_tasks():
 
 @app.get("/api/kpi-cards")
 def api_kpi_cards(period_select: int = Query(7, ge=1, le=60), start_date: Optional[str] = None,
-                  end_date: Optional[str] = None):
-    return loader.get_kpi_cards(period_select, start_date, end_date)
+                  end_date: Optional[str] = None, category: str = "monitor"):
+    return loader.get_kpi_cards(period_select, start_date, end_date, category)
 
 
 @app.get("/api/content-detail")
 def api_content_detail(brand: Optional[str] = None, creator_name: Optional[str] = None,
                        creator_id: Optional[str] = None, start_date: Optional[str] = None,
                        end_date: Optional[str] = None, date: Optional[str] = None, scope: str = "all",
-                       limit: int = Query(50, ge=1, le=5000)):
+                       limit: int = Query(50, ge=1, le=5000), category: str = "monitor"):
     return loader.get_content_detail(brand=brand, creator_name=creator_name, creator_id=creator_id,
                                      start_date=start_date, end_date=end_date, exact_date=date,
-                                     scope=scope, limit=limit)
+                                     scope=scope, limit=limit, category=category)
 
 
 @app.get("/api/creator-detail")
