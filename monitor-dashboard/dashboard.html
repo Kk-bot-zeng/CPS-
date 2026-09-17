@@ -669,6 +669,7 @@ function renderKPISection(){
   <section class="section">
     <div class="section-header"><h2>二、核心指标总览（点击下钻→内容明细）</h2></div>
     ${renderCoreMetricChart()}
+    ${renderDrillDown()}
     <div class="kpi-grid">
       ${KPI_CARD_CONFIG.map((config)=>{
         const card=findKpiCard(cards,config.key)||{key:config.key,label:config.label,unit:config.unit,data_status:'unavailable',data_message:'该指标暂未接入'};
@@ -1031,6 +1032,8 @@ function renderCreatorWorkbench(){
       <button type="button" id="tabHighValueTab" class="workbench-tab ${state.activeWB==='tabHighValue'?'active':''}" data-tab="tabHighValue" role="tab" aria-selected="${state.activeWB==='tabHighValue'}" aria-controls="tabHighValue" onclick="switchWBTab('tabHighValue')">&#128142; 高价值基本盘</button>
       <button type="button" id="tabRoiTab" class="workbench-tab ${state.activeWB==='tabRoi'?'active':''}" data-tab="tabRoi" role="tab" aria-selected="${state.activeWB==='tabRoi'}" aria-controls="tabRoi" onclick="switchWBTab('tabRoi')">&#128200; 投放ROI分析</button>
     </div>
+
+    ${renderDrillDown()}
 
     <!-- Tab 1: 待建联 -->
     <div class="workbench-panel ${state.activeWB==='tabInvite'?'active':''}" id="tabInvite" role="tabpanel" aria-labelledby="tabInviteTab" ${state.activeWB==='tabInvite'?'':'hidden'}>
