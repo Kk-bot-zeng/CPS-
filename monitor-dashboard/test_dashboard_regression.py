@@ -388,6 +388,28 @@ class MonitorDashboardRegressionTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertEqual({row["content_id"] for row in detail.json()}, {"C3", "C4"})
 
+    def test_auto_analysis_covers_store_and_alliance_growth_without_fake_clicks(self) -> None:
+        response = self.client.get(
+            "/api/auto-analysis",
+            params={"start_date": self.CURRENT_START, "end_date": self.CURRENT_END},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(
+            payload["correlation_groups"],
+            ["店铺流量", "店铺销售", "京东联盟点击", "京东联盟销售"],
+        )
+        self.assertEqual(len(payload["correlations"]), 12)
+        by_label = {item["label"]: item for item in payload["correlations"]}
+        for source in ("内容数", "蓝链数", "播放量"):
+            for target in ("店铺流量", "店铺销售", "京东联盟点击", "京东联盟销售"):
+                self.assertIn(f"{source}与{target}", by_label)
+            self.assertIsNone(by_label[f"{source}与京东联盟点击"]["value"])
+        self.assertEqual(len(payload["findings"]), 3)
+        self.assertTrue(all("店铺流量" in item and "京东联盟销售" in item
+                            for item in payload["findings"]))
+        self.assertIn("数据源未接入", payload["quality_note"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

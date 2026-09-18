@@ -369,7 +369,8 @@ function renderAutoAnalysis(){
     const width=value==null?0:Math.min(100,Math.abs(value)*100);
     return `<div class="correlation-row"><span>${item.label}</span><div class="correlation-track"><div class="correlation-bar ${value<0?'negative':''}" style="width:${width}%"></div></div><b>${value==null?'数据不足':value}</b></div>`;
   };
-  const correlations=['店铺流量','京东联盟订单'].map(group=>`<div class="correlation-group"><b>${group}相关性</b>${(a.correlations||[]).filter(item=>item.group===group).map(correlationRow).join('')}</div>`).join('');
+  const correlationGroups=a.correlation_groups||['店铺流量','店铺销售','京东联盟点击','京东联盟销售'];
+  const correlations=correlationGroups.map(group=>`<div class="correlation-group"><b>${group}相关性</b>${(a.correlations||[]).filter(item=>item.group===group).map(correlationRow).join('')||'<div class="analysis-empty">数据不足</div>'}</div>`).join('');
   return `<section class="auto-analysis">
     <div class="auto-analysis-head"><h2>${a.title||'AI 自动经营分析'}</h2><span>${a.period_start} ~ ${a.period_end} · ${a.sample_days}个有效数据日</span></div>
     <div class="auto-analysis-grid">

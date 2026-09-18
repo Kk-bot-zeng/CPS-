@@ -1070,7 +1070,15 @@ class DataLoader:
 
     @staticmethod
     def _correlation(rows: list[dict], left: str, right: str) -> Optional[float]:
-        pairs = [(_num(row.get(left)), _num(row.get(right))) for row in rows]
+        # Missing source values must not be treated as measured zeroes.  Doing
+        # so creates convincing but false correlations for unconnected feeds
+        # such as JD Alliance clicks.
+        pairs = []
+        for row in rows:
+            left_value, right_value = row.get(left), row.get(right)
+            if left_value in (None, "") or right_value in (None, ""):
+                continue
+            pairs.append((_num(left_value), _num(right_value)))
         if len(pairs) < 3:
             return None
         xs, ys = zip(*pairs)
@@ -1083,44 +1091,85 @@ class DataLoader:
     def get_auto_analysis(self, start_date: Optional[str] = None,
                           end_date: Optional[str] = None, days: int = 7) -> dict:
         start, end = self._resolve_period(start_date, end_date, days)
-        current, previous = self._daily_periods(days, start.isoformat(), end.isoformat())
-        metric_keys = {"content": "new_content", "play": "play_count", "blue_link": "total_blue_link_count",
-                       "traffic": "total_visitors", "orders": "sales_quantity", "commission": "commission_amount"}
-        totals = {name: self._sum(current, key) for name, key in metric_keys.items()}
-        previous_totals = {name: self._sum(previous, key) for name, key in metric_keys.items()}
-        changes = {name: (round((value - previous_totals[name]) / abs(previous_totals[name]) * 100, 2)
-                          if previous_totals[name] else None) for name, value in totals.items()}
-        correlation_rows = [{**row, "store_traffic": _num(row.get("search_visitors")) + _num(row.get("outdoor_visitors"))}
-                            for row in current]
-        pairs = [("内容数与店铺流量", "new_content", "store_traffic", "店铺流量"),
-                 ("蓝链数与店铺流量", "total_blue_link_count", "store_traffic", "店铺流量"),
-                 ("播放量与店铺流量", "play_count", "store_traffic", "店铺流量"),
-                 ("内容数与京东联盟订单", "new_content", "sales_quantity", "京东联盟订单"),
-                 ("蓝链数与京东联盟订单", "total_blue_link_count", "sales_quantity", "京东联盟订单"),
-                 ("播放量与京东联盟订单", "play_count", "sales_quantity", "京东联盟订单")]
-        correlations = [{"label": label, "value": self._correlation(correlation_rows, left, right), "group": group}
-                        for label, left, right, group in pairs]
-        valid = sorted((item for item in correlations if item["value"] is not None),
-                       key=lambda item: abs(item["value"]), reverse=True)
+        period = self.get_daily_with_period(days, start.isoformat(), end.isoformat())
+        current, previous = period["current_period"], period["previous_period"]
+        metric_keys = {
+            "content": "new_content", "blue_link": "total_blue_link_count", "play": "play_count",
+            "traffic": "total_visitors", "store_sales": "store_sales",
+            "jd_clicks": "jd_clicks", "jd_sales": "jd_amount",
+        }
+
+        def metric_total(rows: list[dict], key: str) -> Optional[float]:
+            values = [row.get(key) for row in rows if row.get(key) not in (None, "")]
+            return round(sum(_num(value) for value in values), 2) if values else None
+
+        totals = {name: metric_total(current, key) for name, key in metric_keys.items()}
+        previous_totals = {name: metric_total(previous, key) for name, key in metric_keys.items()}
+        changes = {
+            name: (round((value - previous_totals[name]) / abs(previous_totals[name]) * 100, 2)
+                   if value is not None and previous_totals[name] not in (None, 0) else None)
+            for name, value in totals.items()
+        }
+        source_metrics = [("内容数", "new_content", "content"),
+                          ("蓝链数", "total_blue_link_count", "blue_link"),
+                          ("播放量", "play_count", "play")]
+        target_metrics = [("店铺流量", "total_visitors", "traffic"),
+                          ("店铺销售", "store_sales", "store_sales"),
+                          ("京东联盟点击", "jd_clicks", "jd_clicks"),
+                          ("京东联盟销售", "jd_amount", "jd_sales")]
+        correlations = []
+        for source_label, source_key, source_change_key in source_metrics:
+            for target_label, target_key, target_change_key in target_metrics:
+                value = self._correlation(current, source_key, target_key)
+                correlations.append({
+                    "label": f"{source_label}与{target_label}", "source": source_label,
+                    "target": target_label, "value": value, "group": target_label,
+                    "source_change": changes.get(source_change_key),
+                    "target_change": changes.get(target_change_key),
+                })
+
+        def relation_text(value: Optional[float]) -> str:
+            if value is None:
+                return "数据不足"
+            strength = "明显" if abs(value) >= .5 else "一定" if abs(value) >= .3 else "无明显"
+            if strength == "无明显":
+                return f"无明显相关（r={value}）"
+            return f'{strength}{"正" if value > 0 else "负"}相关（r={value}）'
+
         findings = []
-        if valid:
-            strongest = valid[0]
-            findings.append(f'{strongest["label"]}呈{"正相关" if strongest["value"] > 0 else "负相关"}（相关系数 {strongest["value"]}）')
-        for key, label in (("play", "播放量"), ("blue_link", "蓝链数"), ("orders", "联盟订单"), ("commission", "联盟佣金")):
-            change = changes[key]
-            if change is not None:
-                findings.append(f'{label}较上一等长周期{"增长" if change >= 0 else "下降"}{abs(change):.1f}%')
+        for source_label, _, _ in source_metrics:
+            items = [item for item in correlations if item["source"] == source_label]
+            summary = "；".join(f'与{item["target"]}{relation_text(item["value"])}' for item in items)
+            findings.append(f"{source_label}：{summary}。")
+
         recommendations = []
-        if changes.get("play") is not None and changes["play"] > 0 and (changes.get("orders") or 0) <= 0:
-            recommendations.append("播放增长未同步带动订单，建议复盘高播放内容的蓝链覆盖、商品承接页与转化路径。")
-        if changes.get("blue_link") is not None and changes["blue_link"] < 0:
-            recommendations.append("蓝链数量下降，建议优先补齐高播放内容的蓝链并跟进高价值达人。")
+        period_label = f"{start.isoformat()}至{end.isoformat()}"
+        candidates = sorted(
+            (item for item in correlations
+             if item["value"] is not None and item["value"] >= .5
+             and (item["source_change"] or 0) > 0 and (item["target_change"] or 0) > 0),
+            key=lambda item: item["value"], reverse=True)
+        for item in candidates[:2]:
+            recommendations.append(
+                f'{period_label}周期内，{item["source"]}增长{item["source_change"]:.1f}%，'
+                f'与{item["target"]}提高{item["target_change"]:.1f}%呈明显正相关（r={item["value"]}），'
+                "建议重点观察并优先复用对应内容打法。")
+        traffic_by_source = {item["source"]: item for item in correlations if item["target"] == "店铺流量"}
+        for source_label, _, change_key in source_metrics:
+            item = traffic_by_source.get(source_label)
+            source_change = changes.get(change_key)
+            if item and source_change is not None and source_change > 0 and item["value"] is not None and abs(item["value"]) < .3:
+                recommendations.append(
+                    f"{period_label}周期内，{source_label}增长{source_change:.1f}%，但与店铺流量变化无明显相关"
+                    f'（r={item["value"]}），建议谨慎复投，并检查内容到店铺的承接链路。')
+                break
         if not recommendations:
-            recommendations.append("优先放大与订单正相关度最高的指标，并持续观察至少7个有效数据日。")
+            recommendations.append("当前周期尚未形成可确认的正向联动，建议至少连续观察7个有效数据日后再决定放量或复投。")
         return {"period_start": start.isoformat(), "period_end": end.isoformat(), "sample_days": len(current),
                 "totals": totals, "changes": changes, "correlations": correlations,
-                "findings": findings[:5], "recommendations": recommendations[:3],
-                "quality_note": "相关性按所选周期逐日计算；店铺流量=搜索流量+站外流量。相关性不等同于因果结论，少于3个有效数据日时不计算。"}
+                "correlation_groups": [item[0] for item in target_metrics],
+                "findings": findings, "recommendations": recommendations[:3],
+                "quality_note": "相关性按所选周期逐日计算；店铺流量采用全店流量，销售分别采用店铺成交金额与京东联盟订单金额。相关性不等同于因果结论，少于3个有效数据日或数据源未接入时显示数据不足。"}
 
     @staticmethod
     def _content_direction(titles: list[str]) -> str:
